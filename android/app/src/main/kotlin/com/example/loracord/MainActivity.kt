@@ -14,7 +14,6 @@ import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
@@ -26,7 +25,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelUuid
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -152,7 +150,7 @@ class MainActivity : FlutterActivity() {
                 val device = scanResult.device ?: return
                 val item = mapOf(
                     "id" to device.address,
-                    "name" to (safeDeviceName(device) ?: "Meshtastic"),
+                    "name" to (safeDeviceName(device) ?: "Unknown BLE device"),
                     "rssi" to scanResult.rssi
                 )
                 devices[device.address] = item
@@ -163,9 +161,8 @@ class MainActivity : FlutterActivity() {
                 emit(mapOf("type" to "error", "message" to "BLE scan failed: $errorCode"))
             }
         }
-        val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(meshServiceUuid)).build()
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(listOf(filter), settings, callback)
+        scanner.startScan(null, settings, callback)
         mainHandler.postDelayed({
             scanner.stopScan(callback)
             result.success(devices.values.toList())

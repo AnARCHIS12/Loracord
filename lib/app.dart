@@ -748,16 +748,16 @@ Future<void> _showDevices(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           Text(
-            'Meshtastic nodes',
+            'Nearby BLE nodes',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 12),
           if (controller.devices.isEmpty)
             const ListTile(
               leading: Icon(Icons.bluetooth_disabled),
-              title: Text('No node found'),
+              title: Text('No BLE node found'),
               subtitle: Text(
-                'Check that the node is powered on and visible over BLE.',
+                'Check that the Meshtastic node is powered on and Bluetooth is enabled.',
               ),
             ),
           for (final device in controller.devices)

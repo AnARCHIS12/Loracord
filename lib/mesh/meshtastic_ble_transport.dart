@@ -28,7 +28,7 @@ class MeshtasticBleTransport implements MeshTransport {
 
   @override
   Future<List<MeshDevice>> scan({
-    Duration timeout = const Duration(seconds: 6),
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     final result = await _channel.invokeMethod<List<Object?>>('scan', {
       'timeoutMs': timeout.inMilliseconds,

@@ -81,7 +81,7 @@ class LoracordController extends ChangeNotifier {
 
   Future<void> scanAndRequestPermissions() async {
     transportStatus = MeshTransportStatus.scanning;
-    transportLine = 'Scanning for Meshtastic BLE...';
+    transportLine = 'Scanning for nearby BLE nodes...';
     notifyListeners();
     await _transport.requestPermissions();
     devices = await _transport.scan();
@@ -89,8 +89,8 @@ class LoracordController extends ChangeNotifier {
         ? MeshTransportStatus.disconnected
         : MeshTransportStatus.idle;
     transportLine = devices.isEmpty
-        ? 'No Meshtastic node found'
-        : '${devices.length} node(s) found';
+        ? 'No BLE node found'
+        : '${devices.length} BLE node(s) found';
     notifyListeners();
   }
 
