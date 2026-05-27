@@ -156,11 +156,7 @@ class MainActivity : FlutterActivity() {
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
                 val device = scanResult.device ?: return
-                val item = mapOf(
-                    "id" to device.address,
-                    "name" to (safeDeviceName(device) ?: "Unknown BLE device"),
-                    "rssi" to scanResult.rssi
-                )
+                val item = deviceMap(device, scanResult.rssi)
                 devices[device.address] = item
                 emit(mapOf("type" to "device", "device" to item))
             }
@@ -457,8 +453,17 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "id" to device.address,
             "name" to (safeDeviceName(device) ?: "Meshtastic"),
-            "rssi" to rssi
+            "rssi" to rssi,
+            "paired" to isBonded(device)
         )
+    }
+
+    private fun isBonded(device: BluetoothDevice): Boolean {
+        return try {
+            device.bondState == BluetoothDevice.BOND_BONDED
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun addBondedDevices(adapter: BluetoothAdapter) {

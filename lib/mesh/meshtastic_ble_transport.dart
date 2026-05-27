@@ -105,5 +105,6 @@ class MeshtasticBleTransport implements MeshTransport {
     id: map['id'] as String,
     name: map['name'] as String? ?? 'Meshtastic',
     rssi: map['rssi'] as int?,
+    paired: map['paired'] as bool? ?? false,
   );
 }

@@ -765,11 +765,15 @@ Future<void> _showDevices(
               leading: const Icon(Icons.memory),
               title: Text(device.name),
               subtitle: Text(
-                device.rssi == null
-                    ? device.id
-                    : '${device.id} | RSSI ${device.rssi}',
+                [
+                  device.id,
+                  if (device.paired) 'Paired',
+                  if (device.rssi != null) 'RSSI ${device.rssi}',
+                ].join(' | '),
               ),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: Icon(
+                device.paired ? Icons.bluetooth_connected : Icons.chevron_right,
+              ),
               onTap: () {
                 Navigator.pop(context);
                 controller.connect(device);

@@ -12,11 +12,17 @@ enum MeshTransportStatus {
 }
 
 class MeshDevice {
-  const MeshDevice({required this.id, required this.name, this.rssi});
+  const MeshDevice({
+    required this.id,
+    required this.name,
+    this.rssi,
+    this.paired = false,
+  });
 
   final String id;
   final String name;
   final int? rssi;
+  final bool paired;
 }
 
 class MeshTransportEvent {
