@@ -83,14 +83,20 @@ class LoracordController extends ChangeNotifier {
     transportStatus = MeshTransportStatus.scanning;
     transportLine = 'Scanning for nearby BLE nodes...';
     notifyListeners();
-    await _transport.requestPermissions();
-    devices = await _transport.scan();
-    transportStatus = devices.isEmpty
-        ? MeshTransportStatus.disconnected
-        : MeshTransportStatus.idle;
-    transportLine = devices.isEmpty
-        ? 'No BLE node found'
-        : '${devices.length} BLE node(s) found';
+    try {
+      await _transport.requestPermissions();
+      devices = await _transport.scan();
+      transportStatus = devices.isEmpty
+          ? MeshTransportStatus.disconnected
+          : MeshTransportStatus.idle;
+      transportLine = devices.isEmpty
+          ? 'No BLE node found'
+          : '${devices.length} BLE node(s) found';
+    } catch (error) {
+      devices = const [];
+      transportStatus = MeshTransportStatus.error;
+      transportLine = 'BLE scan failed: $error';
+    }
     notifyListeners();
   }
 

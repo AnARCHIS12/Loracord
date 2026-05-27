@@ -36,9 +36,11 @@ class MainActivity : FlutterActivity() {
     private val bleEvents = "loracord/meshtastic_ble/events"
     private val storageChannel = "loracord/storage"
     private val notificationChannel = "loracord/notifications"
+    private val permissionRequestCode = 41
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var eventSink: EventChannel.EventSink? = null
+    private var pendingPermissionResult: MethodChannel.Result? = null
     private var gatt: BluetoothGatt? = null
     private var toRadio: BluetoothGattCharacteristic? = null
     private var fromRadio: BluetoothGattCharacteristic? = null
@@ -81,8 +83,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, bleChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestPermissions" -> {
-                    requestBlePermissions()
-                    result.success(null)
+                    requestBlePermissions(result)
                 }
                 "scan" -> scan(call.argument<Int>("timeoutMs") ?: 6000, result)
                 "connect" -> {
@@ -139,12 +140,18 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun scan(timeoutMs: Int, result: MethodChannel.Result) {
-        val scanner = bluetoothAdapter()?.bluetoothLeScanner
+        val adapter = bluetoothAdapter()
+        if (adapter?.isEnabled != true) {
+            result.error("ble_disabled", "Bluetooth is disabled", null)
+            return
+        }
+        val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
             result.error("ble_unavailable", "Bluetooth LE scanner unavailable", null)
             return
         }
         devices.clear()
+        addBondedDevices(adapter)
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
                 val device = scanResult.device ?: return
@@ -162,9 +169,18 @@ class MainActivity : FlutterActivity() {
             }
         }
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(null, settings, callback)
+        try {
+            scanner.startScan(null, settings, callback)
+        } catch (error: SecurityException) {
+            result.error("permission_denied", "Bluetooth permission denied: ${error.message}", null)
+            return
+        }
         mainHandler.postDelayed({
-            scanner.stopScan(callback)
+            try {
+                scanner.stopScan(callback)
+            } catch (_: SecurityException) {
+                // Permission may have been revoked while scanning; keep collected results.
+            }
             result.success(devices.values.toList())
         }, timeoutMs.toLong())
     }
@@ -413,18 +429,62 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun requestBlePermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val permissions = listOf(
+    private fun addBondedDevices(adapter: BluetoothAdapter) {
+        try {
+            for (device in adapter.bondedDevices ?: emptySet()) {
+                val item = deviceMap(device)
+                devices[device.address] = item
+                emit(mapOf("type" to "device", "device" to item))
+            }
+        } catch (error: SecurityException) {
+            emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
+        }
+    }
+
+    private fun requiredBlePermissions(): List<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(
                 Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.POST_NOTIFICATIONS
-            ).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (permissions.isNotEmpty()) requestPermissions(permissions.toTypedArray(), 41)
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
         } else {
-            val permissions = listOf(Manifest.permission.ACCESS_FINE_LOCATION)
-                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (permissions.isNotEmpty()) requestPermissions(permissions.toTypedArray(), 41)
+            listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun requestBlePermissions(result: MethodChannel.Result) {
+        val required = requiredBlePermissions()
+        val optional = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            emptyList()
+        }
+        val permissions = (required + optional)
+            .distinct()
+            .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (permissions.isEmpty()) {
+            result.success(null)
+            return
+        }
+        if (pendingPermissionResult != null) {
+            result.error("permission_pending", "Bluetooth permission request already pending", null)
+            return
+        }
+        pendingPermissionResult = result
+        requestPermissions(permissions.toTypedArray(), permissionRequestCode)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != permissionRequestCode) return
+        val result = pendingPermissionResult ?: return
+        pendingPermissionResult = null
+        val denied = requiredBlePermissions()
+            .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (denied.isEmpty()) {
+            result.success(null)
+        } else {
+            result.error("permission_denied", "Bluetooth permissions denied: ${denied.joinToString()}", null)
         }
     }
 
