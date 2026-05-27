@@ -67,6 +67,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _message = TextEditingController();
+  int _shownPairingRequestId = 0;
 
   @override
   void dispose() {
@@ -77,6 +78,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
+    final pairingDevice = widget.controller.pairingDevice;
+    if (pairingDevice != null &&
+        widget.controller.pairingRequestId != _shownPairingRequestId) {
+      _shownPairingRequestId = widget.controller.pairingRequestId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showPairingPin(context, widget.controller, pairingDevice);
+      });
+    }
     return Scaffold(
       body: SafeArea(
         child: Row(
@@ -622,6 +631,67 @@ Future<void> _showDevices(
       );
     },
   );
+}
+
+Future<void> _showPairingPin(
+  BuildContext context,
+  LoracordController controller,
+  MeshDevice device,
+) async {
+  final input = TextEditingController();
+  final pin = await showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: const Text('PIN Bluetooth Meshtastic'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            device.name,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            controller.transportLine,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: input,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 16,
+            decoration: const InputDecoration(
+              labelText: 'PIN',
+              hintText: '123456',
+              counterText: '',
+            ),
+            onSubmitted: (value) => Navigator.pop(context, value),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, input.text),
+          child: const Text('Appairer'),
+        ),
+      ],
+    ),
+  );
+  input.dispose();
+  if (pin != null && pin.trim().isNotEmpty) {
+    await controller.submitPairingPin(pin);
+  }
 }
 
 Future<void> _showCreateGuild(

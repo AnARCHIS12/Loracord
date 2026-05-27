@@ -47,6 +47,10 @@ class MeshtasticBleTransport implements MeshTransport {
       _channel.invokeMethod<void>('connect', {'id': device.id});
 
   @override
+  Future<void> submitPairingPin(MeshDevice device, String pin) => _channel
+      .invokeMethod<void>('submitPairingPin', {'id': device.id, 'pin': pin});
+
+  @override
   Future<void> disconnect() => _channel.invokeMethod<void>('disconnect');
 
   @override
@@ -63,6 +67,14 @@ class MeshtasticBleTransport implements MeshTransport {
           _deviceFromMap(
             (map['device'] as Map<Object?, Object?>).cast<String, Object?>(),
           ),
+        );
+      case 'pairing':
+        return MeshTransportEvent.device(
+          MeshTransportStatus.pairing,
+          _deviceFromMap(
+            (map['device'] as Map<Object?, Object?>).cast<String, Object?>(),
+          ),
+          message: map['message'] as String?,
         );
       case 'connected':
         return MeshTransportEvent.status(

@@ -40,6 +40,8 @@ class LoracordController extends ChangeNotifier {
   MeshTransportStatus transportStatus = MeshTransportStatus.disconnected;
   String transportLine = 'Module non connecte';
   MeshDevice? connectedDevice;
+  MeshDevice? pairingDevice;
+  int pairingRequestId = 0;
   List<MeshDevice> devices = const [];
 
   Future<void> initialize() async {
@@ -87,13 +89,31 @@ class LoracordController extends ChangeNotifier {
     transportStatus = MeshTransportStatus.connecting;
     transportLine = 'Connexion a ${device.name}...';
     connectedDevice = device;
+    pairingDevice = null;
     notifyListeners();
     await _transport.connect(device);
+  }
+
+  Future<void> submitPairingPin(String pin) async {
+    final device = pairingDevice ?? connectedDevice;
+    if (device == null) return;
+    transportStatus = MeshTransportStatus.connecting;
+    transportLine = 'Envoi du PIN Bluetooth...';
+    pairingDevice = null;
+    notifyListeners();
+    try {
+      await _transport.submitPairingPin(device, pin.trim());
+    } catch (error) {
+      transportStatus = MeshTransportStatus.error;
+      transportLine = 'PIN Bluetooth refuse: $error';
+      notifyListeners();
+    }
   }
 
   Future<void> disconnect() async {
     await _transport.disconnect();
     connectedDevice = null;
+    pairingDevice = null;
     transportStatus = MeshTransportStatus.disconnected;
     transportLine = 'Module non connecte';
     notifyListeners();
@@ -366,11 +386,22 @@ class LoracordController extends ChangeNotifier {
       _handleIncomingBytes(event.data!);
       return;
     }
+    if (event.status == MeshTransportStatus.pairing && event.device != null) {
+      pairingDevice = event.device;
+      connectedDevice = event.device;
+      pairingRequestId++;
+      transportStatus = MeshTransportStatus.pairing;
+      transportLine = event.message ?? 'PIN Bluetooth requis';
+      notifyListeners();
+      return;
+    }
     transportStatus = event.status;
     if (event.status == MeshTransportStatus.connected) {
+      pairingDevice = null;
       transportLine = event.message ?? 'Module Meshtastic connecte';
     } else if (event.status == MeshTransportStatus.disconnected) {
       connectedDevice = null;
+      pairingDevice = null;
       transportLine = event.message ?? 'Module deconnecte';
     } else if (event.status == MeshTransportStatus.error) {
       transportLine = event.message ?? 'Erreur transport';

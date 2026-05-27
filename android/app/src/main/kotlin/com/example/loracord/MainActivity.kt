@@ -17,7 +17,10 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -42,6 +45,7 @@ class MainActivity : FlutterActivity() {
     private var toRadio: BluetoothGattCharacteristic? = null
     private var fromRadio: BluetoothGattCharacteristic? = null
     private var fromNum: BluetoothGattCharacteristic? = null
+    private var pendingBondDevice: BluetoothDevice? = null
     private val devices = linkedMapOf<String, Map<String, Any?>>()
 
     private val meshServiceUuid = UUID.fromString("6ba1b218-15a8-461f-9fa8-5dcae273eafd")
@@ -53,6 +57,16 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ensureNotificationChannel()
+        registerPairingReceiver()
+    }
+
+    override fun onDestroy() {
+        try {
+            unregisterReceiver(pairingReceiver)
+        } catch (_: IllegalArgumentException) {
+            // Receiver was not registered or was already unregistered.
+        }
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -76,6 +90,15 @@ class MainActivity : FlutterActivity() {
                 "connect" -> {
                     val id = call.argument<String>("id")
                     if (id == null) result.error("bad_args", "Missing device id", null) else connect(id, result)
+                }
+                "submitPairingPin" -> {
+                    val id = call.argument<String>("id")
+                    val pin = call.argument<String>("pin")
+                    if (id == null || pin == null) {
+                        result.error("bad_args", "Missing device id or PIN", null)
+                    } else {
+                        submitPairingPin(id, pin, result)
+                    }
                 }
                 "disconnect" -> {
                     gatt?.disconnect()
@@ -156,10 +179,124 @@ class MainActivity : FlutterActivity() {
             return
         }
         val device = adapter.getRemoteDevice(id)
-        emit(mapOf("type" to "log", "message" to "Connecting to ${safeDeviceName(device) ?: id}"))
+        val name = safeDeviceName(device) ?: id
+        emit(mapOf("type" to "log", "message" to "Connecting to $name"))
+        if (device.bondState != BluetoothDevice.BOND_BONDED) {
+            pendingBondDevice = device
+            emitPairingRequest(device, "PIN Bluetooth requis pour $name")
+            try {
+                if (!device.createBond()) {
+                    emit(mapOf("type" to "error", "message" to "Impossible de lancer l'appairage Bluetooth"))
+                }
+            } catch (error: SecurityException) {
+                emit(mapOf("type" to "error", "message" to "Permission Bluetooth refusee: ${error.message}"))
+            }
+            result.success(null)
+            return
+        }
+        openGatt(device)
+        result.success(null)
+    }
+
+    private fun submitPairingPin(id: String, pin: String, result: MethodChannel.Result) {
+        val adapter = bluetoothAdapter()
+        if (adapter == null) {
+            result.error("ble_unavailable", "Bluetooth adapter unavailable", null)
+            return
+        }
+        val cleanPin = pin.trim()
+        if (!Regex("^[0-9]{4,16}$").matches(cleanPin)) {
+            result.error("bad_pin", "PIN must contain 4 to 16 digits", null)
+            return
+        }
+        val device = pendingBondDevice?.takeIf { it.address == id } ?: adapter.getRemoteDevice(id)
+        try {
+            @Suppress("DEPRECATION")
+            val accepted = device.setPin(cleanPin.toByteArray(Charsets.UTF_8))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                device.setPairingConfirmation(true)
+            }
+            if (device.bondState == BluetoothDevice.BOND_NONE) device.createBond()
+            if (accepted) {
+                pendingBondDevice = device
+                emit(mapOf("type" to "log", "message" to "PIN Bluetooth envoye, attente appairage..."))
+                result.success(null)
+            } else {
+                result.error("pin_rejected", "Android refused the Bluetooth PIN", null)
+            }
+        } catch (error: SecurityException) {
+            result.error("permission_denied", "Bluetooth permission denied: ${error.message}", null)
+        }
+    }
+
+    private fun openGatt(device: BluetoothDevice) {
         gatt?.close()
         gatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-        result.success(null)
+    }
+
+    private val pairingReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            val device = bluetoothDeviceFromIntent(intent) ?: pendingBondDevice ?: return
+            when (action) {
+                BluetoothDevice.ACTION_PAIRING_REQUEST -> {
+                    pendingBondDevice = device
+                    val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
+                    val pairingKey = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_KEY, -1)
+                    val message = when (variant) {
+                        BluetoothDevice.PAIRING_VARIANT_PASSKEY_CONFIRMATION ->
+                            if (pairingKey >= 0) "Confirme le code Bluetooth $pairingKey" else "Confirmation Bluetooth requise"
+                        BluetoothDevice.PAIRING_VARIANT_PIN ->
+                            "Entre le PIN Bluetooth affiche par le node Meshtastic"
+                        else -> "Appairage Bluetooth requis"
+                    }
+                    emitPairingRequest(device, message)
+                }
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)) {
+                        BluetoothDevice.BOND_BONDED -> {
+                            if (pendingBondDevice?.address == device.address) {
+                                emit(mapOf("type" to "log", "message" to "Appairage Bluetooth termine"))
+                                pendingBondDevice = null
+                                openGatt(device)
+                            }
+                        }
+                        BluetoothDevice.BOND_NONE -> {
+                            if (pendingBondDevice?.address == device.address) {
+                                pendingBondDevice = null
+                                emit(mapOf("type" to "error", "message" to "Appairage Bluetooth annule ou PIN invalide"))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun registerPairingReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pairingReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(pairingReceiver, filter)
+        }
+    }
+
+    private fun bluetoothDeviceFromIntent(intent: Intent): BluetoothDevice? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        }
+    }
+
+    private fun emitPairingRequest(device: BluetoothDevice, message: String) {
+        emit(mapOf("type" to "pairing", "device" to deviceMap(device), "message" to message))
     }
 
     private fun write(bytes: ByteArray, result: MethodChannel.Result) {
@@ -269,6 +406,14 @@ class MainActivity : FlutterActivity() {
         } catch (_: SecurityException) {
             null
         }
+    }
+
+    private fun deviceMap(device: BluetoothDevice, rssi: Int? = null): Map<String, Any?> {
+        return mapOf(
+            "id" to device.address,
+            "name" to (safeDeviceName(device) ?: "Meshtastic"),
+            "rssi" to rssi
+        )
     }
 
     private fun requestBlePermissions() {

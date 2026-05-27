@@ -4,6 +4,7 @@ import 'dart:typed_data';
 enum MeshTransportStatus {
   idle,
   scanning,
+  pairing,
   connecting,
   connected,
   disconnected,
@@ -40,9 +41,14 @@ class MeshTransportEvent {
 
   factory MeshTransportEvent.device(
     MeshTransportStatus status,
-    MeshDevice device,
-  ) {
-    return MeshTransportEvent._(status: status, device: device);
+    MeshDevice device, {
+    String? message,
+  }) {
+    return MeshTransportEvent._(
+      status: status,
+      device: device,
+      message: message,
+    );
   }
 
   factory MeshTransportEvent.data(Uint8List data) {
@@ -63,6 +69,8 @@ abstract class MeshTransport {
   });
 
   Future<void> connect(MeshDevice device);
+
+  Future<void> submitPairingPin(MeshDevice device, String pin);
 
   Future<void> disconnect();
 
