@@ -106,7 +106,14 @@ class LoracordController extends ChangeNotifier {
     connectedDevice = device;
     pairingDevice = null;
     notifyListeners();
-    await _transport.connect(device);
+    try {
+      await _transport.connect(device);
+    } catch (error) {
+      transportStatus = MeshTransportStatus.error;
+      transportLine = 'BLE connection failed: $error';
+      notifyListeners();
+      return;
+    }
     if (transportStatus == MeshTransportStatus.connecting &&
         pairingDevice == null) {
       pairingDevice = device;

@@ -140,6 +140,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun scan(timeoutMs: Int, result: MethodChannel.Result) {
+        if (!ensureBlePermissions(result, "scan")) return
         val adapter = bluetoothAdapter()
         if (adapter?.isEnabled != true) {
             result.error("ble_disabled", "Bluetooth is disabled", null)
@@ -186,6 +187,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun connect(id: String, result: MethodChannel.Result) {
+        if (!ensureBlePermissions(result, "connect")) return
         val adapter = bluetoothAdapter()
         if (adapter == null) {
             result.error("ble_unavailable", "Bluetooth adapter unavailable", null)
@@ -212,6 +214,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun submitPairingPin(id: String, pin: String, result: MethodChannel.Result) {
+        if (!ensureBlePermissions(result, "pair")) return
         val adapter = bluetoothAdapter()
         if (adapter == null) {
             result.error("ble_unavailable", "Bluetooth adapter unavailable", null)
@@ -243,8 +246,16 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun openGatt(device: BluetoothDevice) {
-        gatt?.close()
-        gatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        if (!hasBleConnectPermission()) {
+            emit(mapOf("type" to "error", "message" to "Bluetooth connect permission is required"))
+            return
+        }
+        try {
+            gatt?.close()
+            gatt = device.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        } catch (error: SecurityException) {
+            emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
+        }
     }
 
     private val pairingReceiver = object : BroadcastReceiver() {
@@ -253,6 +264,10 @@ class MainActivity : FlutterActivity() {
             val device = bluetoothDeviceFromIntent(intent) ?: pendingBondDevice ?: return
             when (action) {
                 BluetoothDevice.ACTION_PAIRING_REQUEST -> {
+                    if (!hasBleConnectPermission()) {
+                        emit(mapOf("type" to "error", "message" to "Bluetooth connect permission is required for pairing"))
+                        return
+                    }
                     pendingBondDevice = device
                     val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
                     val pairingKey = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_KEY, -1)
@@ -313,6 +328,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun write(bytes: ByteArray, result: MethodChannel.Result) {
+        if (!ensureBlePermissions(result, "write")) return
         val characteristic = toRadio
         val activeGatt = gatt
         if (characteristic == null || activeGatt == null) {
@@ -320,14 +336,18 @@ class MainActivity : FlutterActivity() {
             return
         }
         characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val status = activeGatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-            if (status == BluetoothGatt.GATT_SUCCESS) result.success(null) else result.error("write_failed", "GATT status $status", null)
-        } else {
-            @Suppress("DEPRECATION")
-            characteristic.value = bytes
-            @Suppress("DEPRECATION")
-            if (activeGatt.writeCharacteristic(characteristic)) result.success(null) else result.error("write_failed", "GATT write refused", null)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val status = activeGatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                if (status == BluetoothGatt.GATT_SUCCESS) result.success(null) else result.error("write_failed", "GATT status $status", null)
+            } else {
+                @Suppress("DEPRECATION")
+                characteristic.value = bytes
+                @Suppress("DEPRECATION")
+                if (activeGatt.writeCharacteristic(characteristic)) result.success(null) else result.error("write_failed", "GATT write refused", null)
+            }
+        } catch (error: SecurityException) {
+            result.error("permission_denied", "Bluetooth permission denied: ${error.message}", null)
         }
     }
 
@@ -335,7 +355,11 @@ class MainActivity : FlutterActivity() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 emit(mapOf("type" to "connected", "message" to "BLE connected, discovering GATT..."))
-                gatt.discoverServices()
+                try {
+                    gatt.discoverServices()
+                } catch (error: SecurityException) {
+                    emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 emit(mapOf("type" to "disconnected", "message" to "BLE node disconnected"))
             }
@@ -392,20 +416,28 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun enableNotification(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-        gatt.setCharacteristicNotification(characteristic, true)
-        val descriptor = characteristic.getDescriptor(clientConfigUuid) ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-        } else {
-            @Suppress("DEPRECATION")
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            @Suppress("DEPRECATION")
-            gatt.writeDescriptor(descriptor)
+        try {
+            gatt.setCharacteristicNotification(characteristic, true)
+            val descriptor = characteristic.getDescriptor(clientConfigUuid) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(descriptor)
+            }
+        } catch (error: SecurityException) {
+            emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
         }
     }
 
     private fun readFromRadio(gatt: BluetoothGatt) {
-        fromRadio?.let { gatt.readCharacteristic(it) }
+        try {
+            fromRadio?.let { gatt.readCharacteristic(it) }
+        } catch (error: SecurityException) {
+            emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
+        }
     }
 
     private fun bluetoothAdapter(): BluetoothAdapter? {
@@ -479,13 +511,33 @@ class MainActivity : FlutterActivity() {
         if (requestCode != permissionRequestCode) return
         val result = pendingPermissionResult ?: return
         pendingPermissionResult = null
-        val denied = requiredBlePermissions()
-            .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        val denied = missingRequiredBlePermissions()
         if (denied.isEmpty()) {
             result.success(null)
         } else {
             result.error("permission_denied", "Bluetooth permissions denied: ${denied.joinToString()}", null)
         }
+    }
+
+    private fun missingRequiredBlePermissions(): List<String> {
+        return requiredBlePermissions()
+            .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+    }
+
+    private fun hasBleConnectPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun ensureBlePermissions(result: MethodChannel.Result, action: String): Boolean {
+        val denied = missingRequiredBlePermissions()
+        if (denied.isEmpty()) return true
+        result.error(
+            "permission_denied",
+            "Bluetooth permissions are required to $action: ${denied.joinToString()}",
+            null
+        )
+        return false
     }
 
     private fun ensureNotificationChannel() {
