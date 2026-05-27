@@ -786,7 +786,10 @@ Future<void> _showPairingPin(
   LoracordController controller,
   MeshDevice device,
 ) async {
-  final input = TextEditingController();
+  final input = TextEditingController(text: '123456');
+  input.selection = TextSelection.fromPosition(
+    TextPosition(offset: input.text.length),
+  );
   final pin = await showDialog<String>(
     context: context,
     barrierDismissible: false,
@@ -837,7 +840,7 @@ Future<void> _showPairingPin(
     ),
   );
   input.dispose();
-  if (pin != null && pin.trim().isNotEmpty) {
+  if (pin != null) {
     await controller.submitPairingPin(pin);
   }
 }

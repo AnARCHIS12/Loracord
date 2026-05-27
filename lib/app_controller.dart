@@ -107,6 +107,14 @@ class LoracordController extends ChangeNotifier {
     pairingDevice = null;
     notifyListeners();
     await _transport.connect(device);
+    if (transportStatus == MeshTransportStatus.connecting &&
+        pairingDevice == null) {
+      pairingDevice = device;
+      pairingRequestId++;
+      transportStatus = MeshTransportStatus.pairing;
+      transportLine = 'Enter the Bluetooth PIN for ${device.name}';
+      notifyListeners();
+    }
   }
 
   Future<void> submitPairingPin(String pin) async {

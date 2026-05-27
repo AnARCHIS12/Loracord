@@ -217,7 +217,7 @@ class MainActivity : FlutterActivity() {
             result.error("ble_unavailable", "Bluetooth adapter unavailable", null)
             return
         }
-        val cleanPin = pin.trim()
+        val cleanPin = pin.trim().ifEmpty { "123456" }
         if (!Regex("^[0-9]{4,16}$").matches(cleanPin)) {
             result.error("bad_pin", "PIN must contain 4 to 16 digits", null)
             return
