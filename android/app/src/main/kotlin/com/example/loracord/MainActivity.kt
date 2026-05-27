@@ -183,13 +183,13 @@ class MainActivity : FlutterActivity() {
         emit(mapOf("type" to "log", "message" to "Connecting to $name"))
         if (device.bondState != BluetoothDevice.BOND_BONDED) {
             pendingBondDevice = device
-            emitPairingRequest(device, "PIN Bluetooth requis pour $name")
+            emitPairingRequest(device, "Bluetooth PIN required for $name")
             try {
                 if (!device.createBond()) {
-                    emit(mapOf("type" to "error", "message" to "Impossible de lancer l'appairage Bluetooth"))
+                    emit(mapOf("type" to "error", "message" to "Could not start Bluetooth pairing"))
                 }
             } catch (error: SecurityException) {
-                emit(mapOf("type" to "error", "message" to "Permission Bluetooth refusee: ${error.message}"))
+                emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
             }
             result.success(null)
             return
@@ -219,7 +219,7 @@ class MainActivity : FlutterActivity() {
             if (device.bondState == BluetoothDevice.BOND_NONE) device.createBond()
             if (accepted) {
                 pendingBondDevice = device
-                emit(mapOf("type" to "log", "message" to "PIN Bluetooth envoye, attente appairage..."))
+                emit(mapOf("type" to "log", "message" to "Bluetooth PIN sent, waiting for pairing..."))
                 result.success(null)
             } else {
                 result.error("pin_rejected", "Android refused the Bluetooth PIN", null)
@@ -245,10 +245,10 @@ class MainActivity : FlutterActivity() {
                     val pairingKey = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_KEY, -1)
                     val message = when (variant) {
                         BluetoothDevice.PAIRING_VARIANT_PASSKEY_CONFIRMATION ->
-                            if (pairingKey >= 0) "Confirme le code Bluetooth $pairingKey" else "Confirmation Bluetooth requise"
+                            if (pairingKey >= 0) "Confirm Bluetooth code $pairingKey" else "Bluetooth confirmation required"
                         BluetoothDevice.PAIRING_VARIANT_PIN ->
-                            "Entre le PIN Bluetooth affiche par le node Meshtastic"
-                        else -> "Appairage Bluetooth requis"
+                            "Enter the Bluetooth PIN shown by the Meshtastic node"
+                        else -> "Bluetooth pairing required"
                     }
                     emitPairingRequest(device, message)
                 }
@@ -256,7 +256,7 @@ class MainActivity : FlutterActivity() {
                     when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)) {
                         BluetoothDevice.BOND_BONDED -> {
                             if (pendingBondDevice?.address == device.address) {
-                                emit(mapOf("type" to "log", "message" to "Appairage Bluetooth termine"))
+                                emit(mapOf("type" to "log", "message" to "Bluetooth pairing complete"))
                                 pendingBondDevice = null
                                 openGatt(device)
                             }
@@ -264,7 +264,7 @@ class MainActivity : FlutterActivity() {
                         BluetoothDevice.BOND_NONE -> {
                             if (pendingBondDevice?.address == device.address) {
                                 pendingBondDevice = null
-                                emit(mapOf("type" to "error", "message" to "Appairage Bluetooth annule ou PIN invalide"))
+                                emit(mapOf("type" to "error", "message" to "Bluetooth pairing canceled or PIN invalid"))
                             }
                         }
                     }
@@ -321,10 +321,10 @@ class MainActivity : FlutterActivity() {
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                emit(mapOf("type" to "connected", "message" to "BLE connecte, decouverte GATT..."))
+                emit(mapOf("type" to "connected", "message" to "BLE connected, discovering GATT..."))
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                emit(mapOf("type" to "disconnected", "message" to "Module BLE deconnecte"))
+                emit(mapOf("type" to "disconnected", "message" to "BLE node disconnected"))
             }
         }
 
@@ -334,12 +334,12 @@ class MainActivity : FlutterActivity() {
             fromRadio = service?.getCharacteristic(fromRadioUuid)
             fromNum = service?.getCharacteristic(fromNumUuid)
             if (toRadio == null || fromRadio == null) {
-                emit(mapOf("type" to "error", "message" to "Caracteristiques Meshtastic introuvables"))
+                emit(mapOf("type" to "error", "message" to "Meshtastic characteristics not found"))
                 return
             }
             fromNum?.let { enableNotification(gatt, it) }
             readFromRadio(gatt)
-            emit(mapOf("type" to "connected", "message" to "Module Meshtastic pret"))
+            emit(mapOf("type" to "connected", "message" to "Meshtastic node ready"))
         }
 
         @Deprecated("Deprecated by Android API")

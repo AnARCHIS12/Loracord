@@ -362,7 +362,7 @@ class LoracordState {
 
   factory LoracordState.seed() {
     final identityPrivateKey = newCryptoKey();
-    final me = LoraUser(id: newMeshId('u'), name: 'Nomade');
+    final me = LoraUser(id: newMeshId('u'), name: 'Nomad');
     return LoracordState(
       me: me,
       users: {me.id: me},

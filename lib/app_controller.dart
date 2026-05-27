@@ -38,7 +38,7 @@ class LoracordController extends ChangeNotifier {
   StreamSubscription<MeshTransportEvent>? _transportSub;
   LoracordState state = LoracordState.seed();
   MeshTransportStatus transportStatus = MeshTransportStatus.disconnected;
-  String transportLine = 'Module non connecte';
+  String transportLine = 'Node not connected';
   MeshDevice? connectedDevice;
   MeshDevice? pairingDevice;
   int pairingRequestId = 0;
@@ -81,7 +81,7 @@ class LoracordController extends ChangeNotifier {
 
   Future<void> scanAndRequestPermissions() async {
     transportStatus = MeshTransportStatus.scanning;
-    transportLine = 'Recherche Meshtastic BLE...';
+    transportLine = 'Scanning for Meshtastic BLE...';
     notifyListeners();
     await _transport.requestPermissions();
     devices = await _transport.scan();
@@ -89,14 +89,14 @@ class LoracordController extends ChangeNotifier {
         ? MeshTransportStatus.disconnected
         : MeshTransportStatus.idle;
     transportLine = devices.isEmpty
-        ? 'Aucun module Meshtastic trouve'
-        : '${devices.length} module(s) trouve(s)';
+        ? 'No Meshtastic node found'
+        : '${devices.length} node(s) found';
     notifyListeners();
   }
 
   Future<void> connect(MeshDevice device) async {
     transportStatus = MeshTransportStatus.connecting;
-    transportLine = 'Connexion a ${device.name}...';
+    transportLine = 'Connecting to ${device.name}...';
     connectedDevice = device;
     pairingDevice = null;
     notifyListeners();
@@ -107,14 +107,14 @@ class LoracordController extends ChangeNotifier {
     final device = pairingDevice ?? connectedDevice;
     if (device == null) return;
     transportStatus = MeshTransportStatus.connecting;
-    transportLine = 'Envoi du PIN Bluetooth...';
+    transportLine = 'Sending Bluetooth PIN...';
     pairingDevice = null;
     notifyListeners();
     try {
       await _transport.submitPairingPin(device, pin.trim());
     } catch (error) {
       transportStatus = MeshTransportStatus.error;
-      transportLine = 'PIN Bluetooth refuse: $error';
+      transportLine = 'Bluetooth PIN rejected: $error';
       notifyListeners();
     }
   }
@@ -124,7 +124,7 @@ class LoracordController extends ChangeNotifier {
     connectedDevice = null;
     pairingDevice = null;
     transportStatus = MeshTransportStatus.disconnected;
-    transportLine = 'Module non connecte';
+    transportLine = 'Node not connected';
     notifyListeners();
   }
 
@@ -173,7 +173,7 @@ class LoracordController extends ChangeNotifier {
         cleanId.length != 9 ||
         cleanId == state.me.id ||
         int.tryParse(cleanId.substring(1), radix: 16) == null) {
-      transportLine = 'ID utilisateur invalide: attendu u + 8 caracteres hex';
+      transportLine = 'Invalid user ID: expected u + 8 hex characters';
       notifyListeners();
       return;
     }
@@ -197,7 +197,7 @@ class LoracordController extends ChangeNotifier {
             peerPublicKey: directInvite.publicKey,
           );
     if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(key)) {
-      transportLine = 'Cle DM invalide: attendu 64 caracteres hex';
+      transportLine = 'Invalid DM key: expected 64 hex characters';
       notifyListeners();
       return;
     }
@@ -211,9 +211,9 @@ class LoracordController extends ChangeNotifier {
     );
     await _save();
     if (directInvite != null) {
-      transportLine = 'Cle DM derivee automatiquement avec X25519';
+      transportLine = 'DM key derived automatically with X25519';
     } else if (sharedKey == null || sharedKey.trim().isEmpty) {
-      transportLine = 'Cle DM generee: $key';
+      transportLine = 'DM key generated: $key';
     }
     notifyListeners();
   }
@@ -225,7 +225,7 @@ class LoracordController extends ChangeNotifier {
     final cryptoKey = newCryptoKey();
     final guild = LoraGuild(
       id: guildId,
-      name: name.trim().isEmpty ? 'Nouveau serveur' : name.trim(),
+      name: name.trim().isEmpty ? 'New server' : name.trim(),
       inviteKey: 'LC2-$guildId-$cryptoKey',
       channelIds: [general, ops],
       cryptoKey: cryptoKey,
@@ -250,13 +250,13 @@ class LoracordController extends ChangeNotifier {
   Future<void> createChannel(String name) async {
     final guild = state.selectedGuildOrNull;
     if (guild == null) {
-      transportLine = 'Cree ou rejoins un serveur avant de creer un salon';
+      transportLine = 'Create or join a server before creating a channel';
       notifyListeners();
       return;
     }
     final cleanName = _normalizeChannelName(name);
     if (cleanName.isEmpty) {
-      transportLine = 'Nom de salon invalide';
+      transportLine = 'Invalid channel name';
       notifyListeners();
       return;
     }
@@ -299,7 +299,7 @@ class LoracordController extends ChangeNotifier {
     final channelId = newMeshId('c');
     final guild = LoraGuild(
       id: guildId,
-      name: 'Serveur $guildId',
+      name: 'Server $guildId',
       inviteKey: inviteCode.trim(),
       channelIds: [channelId],
       cryptoKey: cryptoKey,
@@ -328,12 +328,12 @@ class LoracordController extends ChangeNotifier {
     final clean = text.trim();
     if (clean.isEmpty) return;
     if (transportStatus != MeshTransportStatus.connected) {
-      transportLine = 'Connecte un module Meshtastic avant envoi';
+      transportLine = 'Connect a Meshtastic node before sending';
       notifyListeners();
       return;
     }
     if (!state.isDirectSelected && !state.hasSelectedChannel) {
-      transportLine = 'Cree ou rejoins un serveur avant envoi';
+      transportLine = 'Create or join a server before sending';
       notifyListeners();
       return;
     }
@@ -365,13 +365,13 @@ class LoracordController extends ChangeNotifier {
           fragmentCount: frames.length,
         ),
       );
-      transportLine = '${frames.length} fragment(s) envoye(s) au module';
+      transportLine = '${frames.length} fragment(s) sent to the node';
     } catch (error) {
       _replaceMessage(
         message.id,
         message.copyWith(status: MessageStatus.failed),
       );
-      transportLine = 'Echec envoi: $error';
+      transportLine = 'Send failed: $error';
     }
     await _save();
     notifyListeners();
@@ -379,12 +379,12 @@ class LoracordController extends ChangeNotifier {
 
   Future<void> requestHistorySync() async {
     if (transportStatus != MeshTransportStatus.connected) {
-      transportLine = 'Connecte un module Meshtastic avant la sync';
+      transportLine = 'Connect a Meshtastic node before sync';
       notifyListeners();
       return;
     }
     if (!state.isDirectSelected && !state.hasSelectedChannel) {
-      transportLine = 'Aucun salon a synchroniser';
+      transportLine = 'No channel to sync';
       notifyListeners();
       return;
     }
@@ -408,7 +408,7 @@ class LoracordController extends ChangeNotifier {
     for (final frame in frames) {
       await _transport.write(_meshtasticCodec.encodePrivateAppPacket(frame));
     }
-    transportLine = 'Demande de rattrapage historique envoyee';
+    transportLine = 'History catch-up request sent';
     notifyListeners();
   }
 
@@ -422,20 +422,20 @@ class LoracordController extends ChangeNotifier {
       connectedDevice = event.device;
       pairingRequestId++;
       transportStatus = MeshTransportStatus.pairing;
-      transportLine = event.message ?? 'PIN Bluetooth requis';
+      transportLine = event.message ?? 'Bluetooth PIN required';
       notifyListeners();
       return;
     }
     transportStatus = event.status;
     if (event.status == MeshTransportStatus.connected) {
       pairingDevice = null;
-      transportLine = event.message ?? 'Module Meshtastic connecte';
+      transportLine = event.message ?? 'Meshtastic node connected';
     } else if (event.status == MeshTransportStatus.disconnected) {
       connectedDevice = null;
       pairingDevice = null;
-      transportLine = event.message ?? 'Module deconnecte';
+      transportLine = event.message ?? 'Node disconnected';
     } else if (event.status == MeshTransportStatus.error) {
-      transportLine = event.message ?? 'Erreur transport';
+      transportLine = event.message ?? 'Transport error';
     }
     notifyListeners();
   }
@@ -541,7 +541,7 @@ class LoracordController extends ChangeNotifier {
     if (!packet.encrypted) return packet.text;
     final key = _keyForIncomingPacket(packet);
     if (key == null) {
-      transportLine = 'Message chiffre ignore: cle serveur manquante';
+      transportLine = 'Encrypted message ignored: missing server key';
       notifyListeners();
       return null;
     }
@@ -555,7 +555,7 @@ class LoracordController extends ChangeNotifier {
         payload: packet.payload,
       );
     } catch (_) {
-      transportLine = 'Message chiffre ignore: cle invalide';
+      transportLine = 'Encrypted message ignored: invalid key';
       notifyListeners();
       return null;
     }
@@ -603,7 +603,7 @@ class LoracordController extends ChangeNotifier {
     for (final message in candidates) {
       await _sendMessageFrames(message);
     }
-    transportLine = 'Sync: ${candidates.length} message(s) proposes au mesh';
+    transportLine = 'Sync: ${candidates.length} message(s) offered to the mesh';
     notifyListeners();
   }
 

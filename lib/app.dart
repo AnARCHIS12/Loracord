@@ -161,13 +161,13 @@ class _FirstRunView extends StatelessWidget {
                       ),
                       const SizedBox(height: 22),
                       Text(
-                        'Bienvenue sur Loracord',
+                        'Welcome to Loracord',
                         style: Theme.of(context).textTheme.headlineMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Configure ton premier espace mesh: cree un serveur local ou rejoins une communaute avec un code LC2.',
+                        'Set up your first mesh space: create a local server or join a community with an LC2 invite.',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.white70,
                           height: 1.45,
@@ -177,19 +177,19 @@ class _FirstRunView extends StatelessWidget {
                       FilledButton.icon(
                         onPressed: () => _showCreateGuild(context, controller),
                         icon: const Icon(Icons.add_circle_outline),
-                        label: const Text('Creer mon serveur'),
+                        label: const Text('Create my server'),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: () => _showJoinInvite(context, controller),
                         icon: const Icon(Icons.key),
-                        label: const Text('Rejoindre avec invitation'),
+                        label: const Text('Join with invite'),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: () => _showDevices(context, controller),
                         icon: const Icon(Icons.bluetooth_searching),
-                        label: const Text('Connecter le module Meshtastic'),
+                        label: const Text('Connect Meshtastic node'),
                       ),
                     ],
                   ),
@@ -271,17 +271,17 @@ class _GuildRail extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Creer un serveur',
+            tooltip: 'Create server',
             onPressed: () => _showCreateGuild(context, controller),
             icon: const Icon(Icons.add_circle_outline),
           ),
           IconButton(
-            tooltip: 'Rejoindre avec invitation',
+            tooltip: 'Join with invite',
             onPressed: () => _showJoinInvite(context, controller),
             icon: const Icon(Icons.key),
           ),
           IconButton(
-            tooltip: 'Ajouter un DM',
+            tooltip: 'Add DM',
             onPressed: () => _showAddDirectContact(context, controller),
             icon: const Icon(Icons.person_add_alt_1),
           ),
@@ -347,12 +347,12 @@ class _ChannelPane extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          'SALONS TEXTE',
+                          'TEXT CHANNELS',
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Creer un salon',
+                        tooltip: 'Create channel',
                         onPressed: () =>
                             _showCreateChannel(context, controller),
                         icon: const Icon(Icons.add, size: 18),
@@ -380,12 +380,12 @@ class _ChannelPane extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          'MESSAGES PRIVES',
+                          'DIRECT MESSAGES',
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Ajouter un DM',
+                        tooltip: 'Add DM',
                         onPressed: () =>
                             _showAddDirectContact(context, controller),
                         icon: const Icon(Icons.add, size: 18),
@@ -505,7 +505,7 @@ class _TopBar extends StatelessWidget {
         children: [
           if (onBack != null) ...[
             IconButton(
-              tooltip: 'Retour salons',
+              tooltip: 'Back to channels',
               onPressed: onBack,
               icon: const Icon(Icons.arrow_back),
             ),
@@ -523,7 +523,7 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Rattraper historique',
+            tooltip: 'Catch up history',
             onPressed:
                 controller.transportStatus == MeshTransportStatus.connected
                 ? controller.requestHistorySync
@@ -554,8 +554,8 @@ class _MessageList extends StatelessWidget {
       return Center(
         child: Text(
           state.isDirectSelected
-              ? 'Aucun message prive dans cette conversation.'
-              : 'Aucun message recu sur ce salon.',
+              ? 'No direct messages in this conversation.'
+              : 'No messages received in this channel.',
         ),
       );
     }
@@ -591,10 +591,10 @@ class _MessageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = switch (message.status) {
-      MessageStatus.pending => 'en attente',
-      MessageStatus.sent => 'envoye',
+      MessageStatus.pending => 'pending',
+      MessageStatus.sent => 'sent',
       MessageStatus.received => '${message.fragmentCount} frag',
-      MessageStatus.failed => 'echec',
+      MessageStatus.failed => 'failed',
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -670,8 +670,10 @@ class _Composer extends StatelessWidget {
               decoration: InputDecoration(
                 counterText: '',
                 hintText: connected
-                    ? (direct ? 'DM court via LoRa' : 'Message court via LoRa')
-                    : 'Connecte un module Meshtastic',
+                    ? (direct
+                          ? 'Short DM over LoRa'
+                          : 'Short message over LoRa')
+                    : 'Connect a Meshtastic node',
                 filled: true,
                 fillColor: const Color(0xff232833),
               ),
@@ -680,7 +682,7 @@ class _Composer extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           IconButton.filled(
-            tooltip: 'Envoyer',
+            tooltip: 'Send',
             onPressed: connected ? _send : null,
             icon: const Icon(Icons.send),
           ),
@@ -724,7 +726,7 @@ class _NodeStatus extends StatelessWidget {
             icon: Icon(
               connected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
             ),
-            label: Text(connected ? 'Connecte' : 'Meshtastic'),
+            label: Text(connected ? 'Connected' : 'Meshtastic'),
           ),
         ],
       ),
@@ -746,16 +748,16 @@ Future<void> _showDevices(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           Text(
-            'Modules Meshtastic',
+            'Meshtastic nodes',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 12),
           if (controller.devices.isEmpty)
             const ListTile(
               leading: Icon(Icons.bluetooth_disabled),
-              title: Text('Aucun module trouve'),
+              title: Text('No node found'),
               subtitle: Text(
-                'Verifie que le node est allume et visible en BLE.',
+                'Check that the node is powered on and visible over BLE.',
               ),
             ),
           for (final device in controller.devices)
@@ -789,7 +791,7 @@ Future<void> _showPairingPin(
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
-      title: const Text('PIN Bluetooth Meshtastic'),
+      title: const Text('Meshtastic Bluetooth PIN'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -825,11 +827,11 @@ Future<void> _showPairingPin(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, input.text),
-          child: const Text('Appairer'),
+          child: const Text('Pair'),
         ),
       ],
     ),
@@ -848,20 +850,20 @@ Future<void> _showCreateGuild(
   final value = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Creer un serveur'),
+      title: const Text('Create server'),
       content: TextField(
         controller: input,
         autofocus: true,
-        decoration: const InputDecoration(labelText: 'Nom'),
+        decoration: const InputDecoration(labelText: 'Name'),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, input.text),
-          child: const Text('Creer'),
+          child: const Text('Create'),
         ),
       ],
     ),
@@ -878,7 +880,7 @@ Future<void> _showJoinInvite(
   final value = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Invitation'),
+      title: const Text('Invite'),
       content: TextField(
         controller: input,
         autofocus: true,
@@ -887,11 +889,11 @@ Future<void> _showJoinInvite(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, input.text),
-          child: const Text('Rejoindre'),
+          child: const Text('Join'),
         ),
       ],
     ),
@@ -908,20 +910,20 @@ Future<void> _showCreateChannel(
   final value = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Creer un salon'),
+      title: const Text('Create channel'),
       content: TextField(
         controller: input,
         autofocus: true,
-        decoration: const InputDecoration(labelText: 'Nom du salon'),
+        decoration: const InputDecoration(labelText: 'Channel name'),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, input.text),
-          child: const Text('Creer'),
+          child: const Text('Create'),
         ),
       ],
     ),
@@ -940,7 +942,7 @@ Future<void> _showAddDirectContact(
   final value = await showDialog<({String id, String name, String key})>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Ajouter un DM'),
+      title: const Text('Add DM'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -948,26 +950,26 @@ Future<void> _showAddDirectContact(
             controller: idInput,
             autofocus: true,
             decoration: const InputDecoration(
-              labelText: 'Invitation LDM-... ou ID u...',
+              labelText: 'LDM-... invite or u... ID',
             ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: nameInput,
-            decoration: const InputDecoration(labelText: 'Pseudo'),
+            decoration: const InputDecoration(labelText: 'Nickname'),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: keyInput,
             decoration: const InputDecoration(
-              labelText: 'Cle 64 hex manuelle (optionnel)',
+              labelText: 'Manual 64-hex key (optional)',
             ),
           ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Mon invitation DM',
+              'My DM invite',
               style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
@@ -981,7 +983,7 @@ Future<void> _showAddDirectContact(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, (
@@ -989,7 +991,7 @@ Future<void> _showAddDirectContact(
             name: nameInput.text,
             key: keyInput.text,
           )),
-          child: const Text('Ajouter'),
+          child: const Text('Add'),
         ),
       ],
     ),
