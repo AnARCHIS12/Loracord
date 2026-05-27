@@ -41,6 +41,23 @@ flutter run
 On Android, enable Bluetooth, power on a BLE-visible Meshtastic node, then open
 Loracord and use the `Meshtastic` button at the bottom of the channel list.
 
+## Supported Hardware
+
+Loracord currently supports Meshtastic nodes that expose the official Bluetooth
+LE client service. USB serial and Wi-Fi/TCP transports are not implemented yet.
+
+| Family | Example image | Notes |
+| --- | --- | --- |
+| RAK WisBlock / WisMesh | <img src="https://flasher.meshtastic.org/img/devices/rak4631_case.svg" width="110" alt="RAK WisBlock Meshtastic node"> | RAK4631, WisMesh Pocket, Pocket Mini, Tag, and TAP. |
+| Heltec LoRa | <img src="https://flasher.meshtastic.org/img/devices/heltec-v3.svg" width="110" alt="Heltec LoRa 32 Meshtastic node"> | LoRa 32 V3/V4, Wireless Stick Lite V3, Wireless Tracker. |
+| Heltec T114 | <img src="https://flasher.meshtastic.org/img/devices/heltec-mesh-node-t114.svg" width="110" alt="Heltec Mesh Node T114"> | Low-power nRF52 BLE node with modern LoRa radios. |
+| Seeed SenseCAP | <img src="https://flasher.meshtastic.org/img/devices/tracker-t1000-e.svg" width="110" alt="SenseCAP T1000-E Meshtastic tracker"> | T1000-E and Wio Tracker L1. |
+| LILYGO T-Echo | <img src="https://flasher.meshtastic.org/img/devices/t-echo.svg" width="110" alt="LILYGO T-Echo Meshtastic node"> | Portable BLE Meshtastic node with screen and GNSS options. |
+| LILYGO T-Deck / T-Beam | <img src="https://flasher.meshtastic.org/img/devices/t-deck.svg" width="110" alt="LILYGO T-Deck Meshtastic device"> | T-Deck, T-Deck Plus, T-Beam S3, and compatible BLE boards. |
+
+The full Meshtastic hardware list is available in the official documentation:
+https://meshtastic.org/docs/hardware/devices/
+
 ## GitHub Pages and Releases
 
 The public landing page lives in `docs/`. The `GitHub Pages` workflow publishes

@@ -335,13 +335,15 @@ h3 {
   margin-bottom: 28px;
 }
 
-.feature-grid {
+.feature-grid,
+.hardware-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
 }
 
 .feature-grid article,
+.hardware-grid article,
 .download-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -374,6 +376,40 @@ h3 {
 
 .checks li {
   margin: 8px 0;
+}
+
+.hardware-grid article {
+  display: flex;
+  min-height: 268px;
+  flex-direction: column;
+}
+
+.hardware-grid img {
+  width: 100%;
+  height: 132px;
+  object-fit: contain;
+  margin-bottom: 18px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f4f8f6;
+}
+
+.hardware-grid h3 {
+  margin-bottom: 8px;
+}
+
+.hardware-grid p {
+  margin-bottom: 0;
+  font-size: 0.95rem;
+}
+
+.hardware-note {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(242, 174, 69, 0.42);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(242, 174, 69, 0.08);
 }
 
 .download-card {
