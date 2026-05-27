@@ -57,6 +57,17 @@ void main() {
     expect(toRadio.length, greaterThan(payload.length));
   });
 
+  test('Meshtastic codec can address a direct node packet', () {
+    final codec = MeshtasticClientCodec();
+    final toRadio = codec.encodePrivateAppPacket(
+      Uint8List.fromList([1, 2, 3, 4]),
+      to: 0x1234abcd,
+    );
+
+    expect(toRadio, containsAllInOrder([0x15, 0xcd, 0xab, 0x34, 0x12]));
+    expect(codec.encodeWantConfig(), containsAllInOrder([0x18, 0x01]));
+  });
+
   test('Sync requests stay compact and parse after reassembly', () {
     const protocol = LoracordProtocol(maxLoraPayloadBytes: 80);
     final frames = protocol.syncRequest(

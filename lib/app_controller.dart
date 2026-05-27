@@ -191,7 +191,7 @@ class LoracordController extends ChangeNotifier {
       );
     final key = directInvite == null
         ? (sharedKey == null || sharedKey.trim().isEmpty
-              ? newCryptoKey()
+              ? null
               : sharedKey.trim())
         : await _crypto.deriveDirectKey(
             selfId: state.me.id,
@@ -200,13 +200,13 @@ class LoracordController extends ChangeNotifier {
             selfPublicKey: state.me.publicKey!,
             peerPublicKey: directInvite.publicKey,
           );
-    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(key)) {
+    if (key != null && !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(key)) {
       transportLine = 'Invalid DM key: expected 64 hex characters';
       notifyListeners();
       return;
     }
-    final directKeys = Map<String, String>.from(state.directKeys)
-      ..[cleanId] = key.toLowerCase();
+    final directKeys = Map<String, String>.from(state.directKeys);
+    if (key != null) directKeys[cleanId] = key.toLowerCase();
     state = state.copyWith(
       users: users,
       directKeys: directKeys,
@@ -216,8 +216,8 @@ class LoracordController extends ChangeNotifier {
     await _save();
     if (directInvite != null) {
       transportLine = 'DM key derived automatically with X25519';
-    } else if (sharedKey == null || sharedKey.trim().isEmpty) {
-      transportLine = 'DM key generated: $key';
+    } else if (key == null) {
+      transportLine = 'Native Meshtastic DM enabled for $cleanId';
     }
     notifyListeners();
   }
@@ -409,8 +409,14 @@ class LoracordController extends ChangeNotifier {
       since: since,
       direct: direct,
     );
+    final directTo = direct ? _nodeNumFromUserId(channelId) : null;
     for (final frame in frames) {
-      await _transport.write(_meshtasticCodec.encodePrivateAppPacket(frame));
+      await _transport.write(
+        _meshtasticCodec.encodePrivateAppPacket(
+          frame,
+          to: directTo ?? meshtasticBroadcast,
+        ),
+      );
     }
     transportLine = 'History catch-up request sent';
     notifyListeners();
@@ -434,6 +440,7 @@ class LoracordController extends ChangeNotifier {
     if (event.status == MeshTransportStatus.connected) {
       pairingDevice = null;
       transportLine = event.message ?? 'Meshtastic node connected';
+      unawaited(_requestMeshtasticConfig());
     } else if (event.status == MeshTransportStatus.disconnected) {
       connectedDevice = null;
       pairingDevice = null;
@@ -445,24 +452,37 @@ class LoracordController extends ChangeNotifier {
   }
 
   void _handleIncomingBytes(Uint8List bytes) {
-    final privatePayload = _meshtasticCodec.tryDecodePrivateAppPayload(bytes);
-    if (privatePayload == null) return;
-    final frame = LoracordFrame.tryDecode(privatePayload);
+    final myNodeNum = _meshtasticCodec.tryDecodeMyNodeNum(bytes);
+    if (myNodeNum != null) {
+      unawaited(_adoptMeshtasticNodeId(myNodeNum));
+    }
+
+    final privatePacket = _meshtasticCodec.tryDecodePrivateAppPacket(bytes);
+    if (privatePacket == null) return;
+    final frame = LoracordFrame.tryDecode(privatePacket.payload);
     if (frame == null) return;
     final packet = _reassembler.accept(frame);
     if (packet == null) return;
-    unawaited(_handleIncomingPacket(packet));
+    unawaited(_handleIncomingPacket(packet, meshFrom: privatePacket.from));
   }
 
-  Future<void> _handleIncomingPacket(ReassembledLoracordMessage packet) async {
+  Future<void> _handleIncomingPacket(
+    ReassembledLoracordMessage packet, {
+    int? meshFrom,
+  }) async {
     if (packet.type == LoracordFrameType.syncRequest) {
       await _handleSyncRequest(packet);
       return;
     }
     if (state.messages.any((message) => message.id == packet.messageId)) return;
+    final meshSenderId = meshFrom == null ? null : _userIdFromNodeNum(meshFrom);
+    final effectiveSenderId = packet.type == LoracordFrameType.directText
+        ? meshSenderId ?? packet.senderId
+        : packet.senderId;
     if (packet.type == LoracordFrameType.directText &&
         packet.channelId != state.me.id &&
-        packet.senderId != state.me.id) {
+        packet.senderId != state.me.id &&
+        meshSenderId == null) {
       return;
     }
     final body = await _decodePacketBody(packet);
@@ -470,24 +490,24 @@ class LoracordController extends ChangeNotifier {
 
     final users = Map<String, LoraUser>.from(state.users);
     users.putIfAbsent(
-      packet.senderId,
+      effectiveSenderId,
       () => LoraUser(
-        id: packet.senderId,
-        name: 'Node ${packet.senderId.substring(1, 5)}',
+        id: effectiveSenderId,
+        name: 'Node ${effectiveSenderId.substring(1, 5)}',
       ),
     );
     final message = LoraMessage(
       id: packet.messageId,
       guildId: packet.guildId,
       channelId: packet.channelId,
-      senderId: packet.senderId,
+      senderId: effectiveSenderId,
       body: body,
       createdAt: packet.createdAt,
       status: MessageStatus.received,
       fragmentCount: packet.fragmentCount,
       isDirect: packet.type == LoracordFrameType.directText,
       recipientId: packet.type == LoracordFrameType.directText
-          ? packet.channelId
+          ? (packet.senderId == state.me.id ? packet.channelId : state.me.id)
           : null,
     );
     state = state.copyWith(
@@ -495,7 +515,7 @@ class LoracordController extends ChangeNotifier {
       messages: [...state.messages, message],
     );
     _save();
-    _notifier.notifyMessage(title: users[packet.senderId]!.name, body: body);
+    _notifier.notifyMessage(title: users[effectiveSenderId]!.name, body: body);
     notifyListeners();
   }
 
@@ -535,8 +555,16 @@ class LoracordController extends ChangeNotifier {
             payload: encryptedPayload,
             encrypted: true,
           );
+    final directTo = message.isDirect && message.recipientId != null
+        ? _nodeNumFromUserId(message.recipientId!)
+        : null;
     for (final frame in frames) {
-      await _transport.write(_meshtasticCodec.encodePrivateAppPacket(frame));
+      await _transport.write(
+        _meshtasticCodec.encodePrivateAppPacket(
+          frame,
+          to: directTo ?? meshtasticBroadcast,
+        ),
+      );
     }
     return frames;
   }
@@ -617,6 +645,38 @@ class LoracordController extends ChangeNotifier {
           .map((message) => message.id == id ? replacement : message)
           .toList(),
     );
+  }
+
+  Future<void> _requestMeshtasticConfig() async {
+    try {
+      await _transport.write(_meshtasticCodec.encodeWantConfig());
+    } catch (_) {
+      // The node may already be busy; normal messaging can still work.
+    }
+  }
+
+  Future<void> _adoptMeshtasticNodeId(int nodeNum) async {
+    final nodeUserId = _userIdFromNodeNum(nodeNum);
+    if (nodeUserId == state.me.id) return;
+    final oldId = state.me.id;
+    final me = state.me.copyWith(id: nodeUserId);
+    final users = Map<String, LoraUser>.from(state.users)
+      ..remove(oldId)
+      ..[nodeUserId] = me;
+    state = state.copyWith(me: me, users: users);
+    await _save();
+    notifyListeners();
+  }
+
+  int? _nodeNumFromUserId(String userId) {
+    final clean = _normalizeDirectUserId(userId);
+    if (clean == null) return null;
+    return int.tryParse(clean.substring(1), radix: 16);
+  }
+
+  String _userIdFromNodeNum(int nodeNum) {
+    final hex = (nodeNum & 0xffffffff).toRadixString(16).padLeft(8, '0');
+    return 'u$hex';
   }
 
   Future<void> _save() => _storage.write(_stateKey, state.encode());

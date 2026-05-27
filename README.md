@@ -117,6 +117,7 @@ Loracord follows the Meshtastic security model instead of replacing it:
 - Loracord then encrypts the application payload with AES-GCM 256 before placing it in `PRIVATE_APP`.
 - `LC2-...` guild invite codes contain the guild's 32-byte Loracord key in hexadecimal.
 - DM invites use `LDM-...` with an X25519 public key and automatically derive a shared AES-GCM key.
+- Direct contacts added as `!abcd1234`, `abcd1234`, or `uabcd1234` are sent as native Meshtastic direct packets via `MeshPacket.to`; Meshtastic firmware 2.5+ can protect those direct packets with PKC after key exchange.
 - A manual 64-hex DM key is still accepted as a fallback.
 
 Legacy `LC-...` codes are still accepted, but they do not carry a shareable
