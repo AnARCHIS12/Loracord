@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'domain/entities.dart';
 import 'mesh/loracord_crypto.dart';
@@ -115,7 +116,9 @@ class LoracordController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (transportStatus == MeshTransportStatus.connecting &&
+    await Future<void>.delayed(const Duration(milliseconds: 2500));
+    if (!device.paired &&
+        transportStatus == MeshTransportStatus.connecting &&
         pairingDevice == null) {
       pairingDevice = device;
       pairingRequestId++;
@@ -137,7 +140,7 @@ class LoracordController extends ChangeNotifier {
       await _transport.submitPairingPin(device, pin.trim());
     } catch (error) {
       transportStatus = MeshTransportStatus.error;
-      transportLine = 'Bluetooth PIN rejected: $error';
+      transportLine = _describeBluetoothPinError(error);
       notifyListeners();
     }
   }
@@ -149,6 +152,22 @@ class LoracordController extends ChangeNotifier {
     transportStatus = MeshTransportStatus.disconnected;
     transportLine = 'Node not connected';
     notifyListeners();
+  }
+
+  String _describeBluetoothPinError(Object error) {
+    if (error is PlatformException) {
+      if (error.code == 'permission_denied') {
+        return 'Android blocked Bluetooth PIN entry. Allow Nearby devices, or pair the node in Android Bluetooth settings, then scan again.';
+      }
+      if (error.code == 'bad_pin') {
+        return 'PIN must contain 4 to 16 digits.';
+      }
+      if (error.code == 'pin_rejected') {
+        return 'Android refused this PIN. Check the Meshtastic Bluetooth PIN and try again.';
+      }
+      return error.message ?? 'Bluetooth PIN failed: ${error.code}';
+    }
+    return 'Bluetooth PIN failed: $error';
   }
 
   void selectGuild(String guildId) {

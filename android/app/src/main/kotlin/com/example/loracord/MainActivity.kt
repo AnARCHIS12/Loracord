@@ -195,7 +195,7 @@ class MainActivity : FlutterActivity() {
         try {
             if (device.bondState != BluetoothDevice.BOND_BONDED) {
                 pendingBondDevice = device
-                emitPairingRequest(device, "Bluetooth PIN required for $name")
+                emit(mapOf("type" to "log", "message" to "Starting Android Bluetooth pairing for $name"))
                 if (!device.createBond()) {
                     emit(mapOf("type" to "error", "message" to "Could not start Bluetooth pairing"))
                 }
@@ -237,7 +237,11 @@ class MainActivity : FlutterActivity() {
                 result.error("pin_rejected", "Android refused the Bluetooth PIN", null)
             }
         } catch (error: SecurityException) {
-            result.error("permission_denied", "Bluetooth permission denied: ${error.message}", null)
+            result.error(
+                "permission_denied",
+                "Android blocked in-app Bluetooth PIN entry. Pair the node from Android Bluetooth settings, then scan again.",
+                null
+            )
         }
     }
 
