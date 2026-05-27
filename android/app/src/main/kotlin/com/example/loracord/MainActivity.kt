@@ -197,7 +197,8 @@ class MainActivity : FlutterActivity() {
                 pendingBondDevice = device
                 emit(mapOf("type" to "log", "message" to "Starting Android Bluetooth pairing for $name"))
                 if (!device.createBond()) {
-                    emit(mapOf("type" to "error", "message" to "Could not start Bluetooth pairing"))
+                    emit(mapOf("type" to "log", "message" to "Pairing did not start; trying BLE without PIN"))
+                    openGatt(device)
                 }
                 result.success(null)
                 return
@@ -234,15 +235,22 @@ class MainActivity : FlutterActivity() {
                 emit(mapOf("type" to "log", "message" to "Bluetooth PIN sent, waiting for pairing..."))
                 result.success(null)
             } else {
-                result.error("pin_rejected", "Android refused the Bluetooth PIN", null)
+                fallbackGattAfterPinFailure(device, result, "Android refused the Bluetooth PIN")
             }
         } catch (error: SecurityException) {
-            result.error(
-                "permission_denied",
-                "Android blocked in-app Bluetooth PIN entry. Pair the node from Android Bluetooth settings, then scan again.",
-                null
-            )
+            fallbackGattAfterPinFailure(device, result, "Android blocked in-app Bluetooth PIN entry")
         }
+    }
+
+    private fun fallbackGattAfterPinFailure(
+        device: BluetoothDevice,
+        result: MethodChannel.Result,
+        reason: String
+    ) {
+        pendingBondDevice = null
+        emit(mapOf("type" to "log", "message" to "$reason; trying BLE without PIN"))
+        openGatt(device)
+        result.success(null)
     }
 
     private fun openGatt(device: BluetoothDevice) {
