@@ -196,21 +196,21 @@ class MainActivity : FlutterActivity() {
         val device = adapter.getRemoteDevice(id)
         val name = safeDeviceName(device) ?: id
         emit(mapOf("type" to "log", "message" to "Connecting to $name"))
-        if (device.bondState != BluetoothDevice.BOND_BONDED) {
-            pendingBondDevice = device
-            emitPairingRequest(device, "Bluetooth PIN required for $name")
-            try {
+        try {
+            if (device.bondState != BluetoothDevice.BOND_BONDED) {
+                pendingBondDevice = device
+                emitPairingRequest(device, "Bluetooth PIN required for $name")
                 if (!device.createBond()) {
                     emit(mapOf("type" to "error", "message" to "Could not start Bluetooth pairing"))
                 }
-            } catch (error: SecurityException) {
-                emit(mapOf("type" to "error", "message" to "Bluetooth permission denied: ${error.message}"))
+                result.success(null)
+                return
             }
+            openGatt(device)
             result.success(null)
-            return
+        } catch (error: SecurityException) {
+            result.error("permission_denied", "Bluetooth permission denied: ${error.message}", null)
         }
-        openGatt(device)
-        result.success(null)
     }
 
     private fun submitPairingPin(id: String, pin: String, result: MethodChannel.Result) {

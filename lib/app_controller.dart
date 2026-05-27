@@ -107,6 +107,7 @@ class LoracordController extends ChangeNotifier {
     pairingDevice = null;
     notifyListeners();
     try {
+      await _transport.requestPermissions();
       await _transport.connect(device);
     } catch (error) {
       transportStatus = MeshTransportStatus.error;
@@ -132,6 +133,7 @@ class LoracordController extends ChangeNotifier {
     pairingDevice = null;
     notifyListeners();
     try {
+      await _transport.requestPermissions();
       await _transport.submitPairingPin(device, pin.trim());
     } catch (error) {
       transportStatus = MeshTransportStatus.error;
