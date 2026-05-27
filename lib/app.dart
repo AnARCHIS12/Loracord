@@ -68,6 +68,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _message = TextEditingController();
   int _shownPairingRequestId = 0;
+  bool _mobileConversationOpen = false;
 
   @override
   void dispose() {
@@ -77,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.controller.state;
     final pairingDevice = widget.controller.pairingDevice;
     if (pairingDevice != null &&
         widget.controller.pairingRequestId != _shownPairingRequestId) {
@@ -88,25 +88,68 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return Scaffold(
       body: SafeArea(
-        child: Row(
-          children: [
-            _GuildRail(controller: widget.controller),
-            _ChannelPane(controller: widget.controller),
-            Expanded(
-              child: Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 720;
+            if (compact) {
+              if (_mobileConversationOpen) {
+                return _ConversationView(
+                  controller: widget.controller,
+                  textController: _message,
+                  onBack: () => setState(() => _mobileConversationOpen = false),
+                );
+              }
+              return Row(
                 children: [
-                  _TopBar(controller: widget.controller),
-                  Expanded(child: _MessageList(state: state)),
-                  _Composer(
+                  _GuildRail(controller: widget.controller),
+                  Expanded(
+                    child: _ChannelPane(
+                      controller: widget.controller,
+                      onConversationSelected: () =>
+                          setState(() => _mobileConversationOpen = true),
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                _GuildRail(controller: widget.controller),
+                _ChannelPane(controller: widget.controller),
+                Expanded(
+                  child: _ConversationView(
                     controller: widget.controller,
                     textController: _message,
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+class _ConversationView extends StatelessWidget {
+  const _ConversationView({
+    required this.controller,
+    required this.textController,
+    this.onBack,
+  });
+
+  final LoracordController controller;
+  final TextEditingController textController;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _TopBar(controller: controller, onBack: onBack),
+        Expanded(child: _MessageList(state: controller.state)),
+        _Composer(controller: controller, textController: textController),
+      ],
     );
   }
 }
@@ -127,27 +170,33 @@ class _GuildRail extends StatelessWidget {
           const SizedBox(height: 10),
           const Tooltip(message: 'Loracord', child: LoracordLogo(size: 48)),
           const SizedBox(height: 8),
-          for (final guild in state.guilds.values)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Tooltip(
-                message: guild.name,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: guild.id == state.selectedGuildId
-                        ? Theme.of(context).colorScheme.primary
-                        : const Color(0xff242833),
-                    fixedSize: const Size(46, 46),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                for (final guild in state.guilds.values)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Tooltip(
+                      message: guild.name,
+                      child: IconButton.filled(
+                        style: IconButton.styleFrom(
+                          backgroundColor: guild.id == state.selectedGuildId
+                              ? Theme.of(context).colorScheme.primary
+                              : const Color(0xff242833),
+                          fixedSize: const Size(46, 46),
+                        ),
+                        onPressed: () => controller.selectGuild(guild.id),
+                        icon: Text(
+                          guild.name.substring(0, 1).toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
                   ),
-                  onPressed: () => controller.selectGuild(guild.id),
-                  icon: Text(
-                    guild.name.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
+              ],
             ),
-          const Spacer(),
+          ),
           IconButton(
             tooltip: 'Creer un serveur',
             onPressed: () => _showCreateGuild(context, controller),
@@ -171,16 +220,17 @@ class _GuildRail extends StatelessWidget {
 }
 
 class _ChannelPane extends StatelessWidget {
-  const _ChannelPane({required this.controller});
+  const _ChannelPane({required this.controller, this.onConversationSelected});
 
   final LoracordController controller;
+  final VoidCallback? onConversationSelected;
 
   @override
   Widget build(BuildContext context) {
     final state = controller.state;
     final guild = state.selectedGuild;
     return Container(
-      width: 214,
+      width: onConversationSelected == null ? 214 : null,
       color: const Color(0xff1d2028),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -214,63 +264,77 @@ class _ChannelPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                Expanded(
-                  child: Text(
-                    'SALONS TEXTE',
-                    style: Theme.of(context).textTheme.labelSmall,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'SALONS TEXTE',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Creer un salon',
+                        onPressed: () =>
+                            _showCreateChannel(context, controller),
+                        icon: const Icon(Icons.add, size: 18),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Creer un salon',
-                  onPressed: () => _showCreateChannel(context, controller),
-                  icon: const Icon(Icons.add, size: 18),
-                  visualDensity: VisualDensity.compact,
+                const SizedBox(height: 6),
+                for (final id in guild.channelIds)
+                  _ChannelTile(
+                    channel: state.channels[id]!,
+                    selected:
+                        state.selectedKind == ConversationKind.channel &&
+                        id == state.selectedChannelId,
+                    onTap: () {
+                      controller.selectChannel(id);
+                      onConversationSelected?.call();
+                    },
+                  ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'MESSAGES PRIVES',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Ajouter un DM',
+                        onPressed: () =>
+                            _showAddDirectContact(context, controller),
+                        icon: const Icon(Icons.add, size: 18),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
                 ),
+                for (final user in state.directPeers())
+                  _DirectTile(
+                    user: user,
+                    selected:
+                        state.selectedKind == ConversationKind.direct &&
+                        state.selectedDirectUserId == user.id,
+                    onTap: () {
+                      controller.selectDirect(user.id);
+                      onConversationSelected?.call();
+                    },
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 6),
-          for (final id in guild.channelIds)
-            _ChannelTile(
-              channel: state.channels[id]!,
-              selected:
-                  state.selectedKind == ConversationKind.channel &&
-                  id == state.selectedChannelId,
-              onTap: () => controller.selectChannel(id),
-            ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'MESSAGES PRIVES',
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Ajouter un DM',
-                  onPressed: () => _showAddDirectContact(context, controller),
-                  icon: const Icon(Icons.add, size: 18),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-          ),
-          for (final user in state.directPeers())
-            _DirectTile(
-              user: user,
-              selected:
-                  state.selectedKind == ConversationKind.direct &&
-                  state.selectedDirectUserId == user.id,
-              onTap: () => controller.selectDirect(user.id),
-            ),
-          const Spacer(),
           _NodeStatus(controller: controller),
         ],
       ),
@@ -345,9 +409,10 @@ class _DirectTile extends StatelessWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.controller});
+  const _TopBar({required this.controller, this.onBack});
 
   final LoracordController controller;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +430,14 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
+          if (onBack != null) ...[
+            IconButton(
+              tooltip: 'Retour salons',
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back),
+            ),
+            const SizedBox(width: 4),
+          ],
           Icon(icon, size: 20),
           const SizedBox(width: 8),
           Expanded(
