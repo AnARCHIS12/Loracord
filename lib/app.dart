@@ -90,6 +90,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (!widget.controller.state.hasGuilds) {
+              return _FirstRunView(controller: widget.controller);
+            }
             final compact = constraints.maxWidth < 720;
             if (compact) {
               if (_mobileConversationOpen) {
@@ -126,6 +129,76 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _FirstRunView extends StatelessWidget {
+  const _FirstRunView({required this.controller});
+
+  final LoracordController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xff17191f),
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: LoracordLogo(size: 68),
+                      ),
+                      const SizedBox(height: 22),
+                      Text(
+                        'Bienvenue sur Loracord',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Configure ton premier espace mesh: cree un serveur local ou rejoins une communaute avec un code LC2.',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.white70,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () => _showCreateGuild(context, controller),
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: const Text('Creer mon serveur'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => _showJoinInvite(context, controller),
+                        icon: const Icon(Icons.key),
+                        label: const Text('Rejoindre avec invitation'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => _showDevices(context, controller),
+                        icon: const Icon(Icons.bluetooth_searching),
+                        label: const Text('Connecter le module Meshtastic'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(top: false, child: _NodeStatus(controller: controller)),
+        ],
       ),
     );
   }

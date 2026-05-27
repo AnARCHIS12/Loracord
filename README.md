@@ -42,6 +42,8 @@ On Android, enable Bluetooth, power on a BLE-visible Meshtastic node, then open
 Loracord and use the `Meshtastic` button at the bottom of the channel list.
 If the node requires Bluetooth pairing, Loracord opens an in-app PIN dialog and
 continues the GATT connection after Android reports the device as bonded.
+On first launch, Loracord starts with a short setup assistant instead of a demo
+server: create a new encrypted guild or join one with an `LC2-...` invite.
 
 ## Supported Hardware
 

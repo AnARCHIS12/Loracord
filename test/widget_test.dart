@@ -7,6 +7,15 @@ import 'package:loracord/mesh/loracord_protocol.dart';
 import 'package:loracord/mesh/meshtastic_codec.dart';
 
 void main() {
+  test('Initial state starts without a default guild', () {
+    final state = LoracordState.seed();
+
+    expect(state.guilds, isEmpty);
+    expect(state.channels, isEmpty);
+    expect(state.messagesForCurrentConversation(), isEmpty);
+    expect(state.hasGuilds, isFalse);
+  });
+
   test('Loracord protocol fragments and reassembles UTF-8 messages', () {
     const protocol = LoracordProtocol(maxLoraPayloadBytes: 64);
     final frames = protocol.fragmentText(

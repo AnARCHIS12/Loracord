@@ -214,7 +214,11 @@ class LoracordState {
 
   LoraGuild get selectedGuild => guilds[selectedGuildId]!;
   LoraChannel get selectedChannel => channels[selectedChannelId]!;
+  LoraGuild? get selectedGuildOrNull => guilds[selectedGuildId];
+  LoraChannel? get selectedChannelOrNull => channels[selectedChannelId];
   LoraUser? get selectedDirectUser => users[selectedDirectUserId];
+  bool get hasGuilds => guilds.isNotEmpty;
+  bool get hasSelectedChannel => selectedChannelOrNull != null;
 
   bool get isDirectSelected =>
       selectedKind == ConversationKind.direct && selectedDirectUserId != null;
@@ -245,6 +249,8 @@ class LoracordState {
 
   Iterable<LoraMessage> messagesForCurrentConversation() => isDirectSelected
       ? messagesForSelectedDirect()
+      : !hasSelectedChannel
+      ? const []
       : messagesForSelectedChannel();
 
   Iterable<LoraUser> directPeers() {
@@ -270,6 +276,7 @@ class LoracordState {
     String? selectedChannelId,
     ConversationKind? selectedKind,
     String? selectedDirectUserId,
+    bool clearSelectedDirectUser = false,
   }) {
     return LoracordState(
       me: me ?? this.me,
@@ -282,7 +289,9 @@ class LoracordState {
       selectedGuildId: selectedGuildId ?? this.selectedGuildId,
       selectedChannelId: selectedChannelId ?? this.selectedChannelId,
       selectedKind: selectedKind ?? this.selectedKind,
-      selectedDirectUserId: selectedDirectUserId ?? this.selectedDirectUserId,
+      selectedDirectUserId: clearSelectedDirectUser
+          ? null
+          : selectedDirectUserId ?? this.selectedDirectUserId,
     );
   }
 
@@ -354,41 +363,16 @@ class LoracordState {
   factory LoracordState.seed() {
     final identityPrivateKey = newCryptoKey();
     final me = LoraUser(id: newMeshId('u'), name: 'Nomade');
-    final cryptoKey = newCryptoKey();
-    final guild = LoraGuild(
-      id: 'g7a01cafe',
-      name: 'Camp Mesh',
-      inviteKey: 'LC2-g7a01cafe-$cryptoKey',
-      channelIds: const ['c00000001', 'c00000002', 'c00000003'],
-      cryptoKey: cryptoKey,
-    );
-    final channels = {
-      'c00000001': const LoraChannel(
-        id: 'c00000001',
-        guildId: 'g7a01cafe',
-        name: 'general',
-      ),
-      'c00000002': const LoraChannel(
-        id: 'c00000002',
-        guildId: 'g7a01cafe',
-        name: 'logistique',
-      ),
-      'c00000003': const LoraChannel(
-        id: 'c00000003',
-        guildId: 'g7a01cafe',
-        name: 'urgence',
-      ),
-    };
     return LoracordState(
       me: me,
       users: {me.id: me},
-      guilds: {guild.id: guild},
-      channels: channels,
+      guilds: const {},
+      channels: const {},
       directKeys: const {},
       identityPrivateKey: identityPrivateKey,
       messages: const [],
-      selectedGuildId: guild.id,
-      selectedChannelId: 'c00000001',
+      selectedGuildId: '',
+      selectedChannelId: '',
       selectedKind: ConversationKind.channel,
     );
   }

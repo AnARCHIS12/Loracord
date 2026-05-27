@@ -49,9 +49,18 @@ class LoracordController extends ChangeNotifier {
     if (raw != null) {
       try {
         state = LoracordState.decode(raw);
+        if (_isLegacyEmptyDemoState(state)) {
+          state = _emptyStateFrom(state);
+          await _save();
+        }
       } catch (_) {
         state = LoracordState.seed();
       }
+    }
+    final beforeNormalize = state.encode();
+    state = _normalizeSelection(state);
+    if (state.encode() != beforeNormalize) {
+      await _save();
     }
     await _ensureDirectIdentity();
     _transportSub = _transport.events.listen(_handleTransportEvent);
@@ -126,6 +135,7 @@ class LoracordController extends ChangeNotifier {
       selectedGuildId: guildId,
       selectedChannelId: guild.channelIds.first,
       selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
     );
     _save();
     notifyListeners();
@@ -136,6 +146,7 @@ class LoracordController extends ChangeNotifier {
     state = state.copyWith(
       selectedChannelId: channelId,
       selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
     );
     _save();
     notifyListeners();
@@ -229,13 +240,20 @@ class LoracordController extends ChangeNotifier {
       channels: channels,
       selectedGuildId: guild.id,
       selectedChannelId: general,
+      selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
     );
     await _save();
     notifyListeners();
   }
 
   Future<void> createChannel(String name) async {
-    final guild = state.selectedGuild;
+    final guild = state.selectedGuildOrNull;
+    if (guild == null) {
+      transportLine = 'Cree ou rejoins un serveur avant de creer un salon';
+      notifyListeners();
+      return;
+    }
     final cleanName = _normalizeChannelName(name);
     if (cleanName.isEmpty) {
       transportLine = 'Nom de salon invalide';
@@ -259,6 +277,7 @@ class LoracordController extends ChangeNotifier {
       channels: channels,
       selectedKind: ConversationKind.channel,
       selectedChannelId: channelId,
+      clearSelectedDirectUser: true,
     );
     await _save();
     notifyListeners();
@@ -298,6 +317,8 @@ class LoracordController extends ChangeNotifier {
       channels: channels,
       selectedGuildId: guild.id,
       selectedChannelId: channelId,
+      selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
     );
     await _save();
     notifyListeners();
@@ -308,6 +329,11 @@ class LoracordController extends ChangeNotifier {
     if (clean.isEmpty) return;
     if (transportStatus != MeshTransportStatus.connected) {
       transportLine = 'Connecte un module Meshtastic avant envoi';
+      notifyListeners();
+      return;
+    }
+    if (!state.isDirectSelected && !state.hasSelectedChannel) {
+      transportLine = 'Cree ou rejoins un serveur avant envoi';
       notifyListeners();
       return;
     }
@@ -354,6 +380,11 @@ class LoracordController extends ChangeNotifier {
   Future<void> requestHistorySync() async {
     if (transportStatus != MeshTransportStatus.connected) {
       transportLine = 'Connecte un module Meshtastic avant la sync';
+      notifyListeners();
+      return;
+    }
+    if (!state.isDirectSelected && !state.hasSelectedChannel) {
+      transportLine = 'Aucun salon a synchroniser';
       notifyListeners();
       return;
     }
@@ -585,6 +616,80 @@ class LoracordController extends ChangeNotifier {
   }
 
   Future<void> _save() => _storage.write(_stateKey, state.encode());
+
+  bool _isLegacyEmptyDemoState(LoracordState value) {
+    if (value.messages.isNotEmpty) return false;
+    if (value.guilds.length != 1 || !value.guilds.containsKey('g7a01cafe')) {
+      return false;
+    }
+    final guild = value.guilds['g7a01cafe']!;
+    return guild.name == 'Camp Mesh' &&
+        value.channels.values.every((channel) => channel.guildId == guild.id);
+  }
+
+  LoracordState _emptyStateFrom(LoracordState value) {
+    return value.copyWith(
+      guilds: const {},
+      channels: const {},
+      selectedGuildId: '',
+      selectedChannelId: '',
+      selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
+    );
+  }
+
+  LoracordState _normalizeSelection(LoracordState value) {
+    if (value.guilds.isEmpty) {
+      if (value.selectedGuildId.isEmpty &&
+          value.selectedChannelId.isEmpty &&
+          !value.isDirectSelected) {
+        return value;
+      }
+      return value.copyWith(
+        selectedGuildId: '',
+        selectedChannelId: '',
+        selectedKind: ConversationKind.channel,
+        clearSelectedDirectUser: true,
+      );
+    }
+    final selectedDirect = value.selectedDirectUserId;
+    if (value.selectedKind == ConversationKind.direct &&
+        selectedDirect != null &&
+        value.users.containsKey(selectedDirect)) {
+      return value;
+    }
+    final guild =
+        value.guilds[value.selectedGuildId] ?? value.guilds.values.first;
+    final channelId = guild.channelIds.firstWhere(
+      value.channels.containsKey,
+      orElse: () => '',
+    );
+    if (channelId.isEmpty) {
+      final fallbackChannelId = newMeshId('c');
+      final guilds = Map<String, LoraGuild>.from(value.guilds)
+        ..[guild.id] = guild.copyWith(channelIds: [fallbackChannelId]);
+      final channels = Map<String, LoraChannel>.from(value.channels)
+        ..[fallbackChannelId] = LoraChannel(
+          id: fallbackChannelId,
+          guildId: guild.id,
+          name: 'general',
+        );
+      return value.copyWith(
+        guilds: guilds,
+        channels: channels,
+        selectedGuildId: guild.id,
+        selectedChannelId: fallbackChannelId,
+        selectedKind: ConversationKind.channel,
+        clearSelectedDirectUser: true,
+      );
+    }
+    return value.copyWith(
+      selectedGuildId: guild.id,
+      selectedChannelId: channelId,
+      selectedKind: ConversationKind.channel,
+      clearSelectedDirectUser: true,
+    );
+  }
 
   Future<void> _ensureDirectIdentity() async {
     var privateKey = state.identityPrivateKey;
