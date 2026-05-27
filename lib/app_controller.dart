@@ -1,0 +1,601 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import 'domain/entities.dart';
+import 'mesh/loracord_crypto.dart';
+import 'mesh/loracord_protocol.dart';
+import 'mesh/mesh_transport.dart';
+import 'mesh/meshtastic_codec.dart';
+import 'platform/local_notifier.dart';
+import 'storage/local_storage.dart';
+
+class LoracordController extends ChangeNotifier {
+  LoracordController({
+    required MeshTransport transport,
+    required LocalStorage storage,
+    LocalNotifier notifier = const LocalNotifier(),
+    LoracordProtocol protocol = const LoracordProtocol(),
+    LoracordCrypto? crypto,
+    MeshtasticClientCodec? meshtasticCodec,
+  }) : _transport = transport,
+       _storage = storage,
+       _notifier = notifier,
+       _protocol = protocol,
+       _crypto = crypto ?? LoracordCrypto(),
+       _meshtasticCodec = meshtasticCodec ?? MeshtasticClientCodec();
+
+  static const _stateKey = 'loracord.state.v1';
+
+  final MeshTransport _transport;
+  final LocalStorage _storage;
+  final LocalNotifier _notifier;
+  final LoracordProtocol _protocol;
+  final LoracordCrypto _crypto;
+  final MeshtasticClientCodec _meshtasticCodec;
+  final LoracordReassembler _reassembler = LoracordReassembler();
+
+  StreamSubscription<MeshTransportEvent>? _transportSub;
+  LoracordState state = LoracordState.seed();
+  MeshTransportStatus transportStatus = MeshTransportStatus.disconnected;
+  String transportLine = 'Module non connecte';
+  MeshDevice? connectedDevice;
+  List<MeshDevice> devices = const [];
+
+  Future<void> initialize() async {
+    final raw = await _storage.read(_stateKey);
+    if (raw != null) {
+      try {
+        state = LoracordState.decode(raw);
+      } catch (_) {
+        state = LoracordState.seed();
+      }
+    }
+    await _ensureDirectIdentity();
+    _transportSub = _transport.events.listen(_handleTransportEvent);
+    notifyListeners();
+  }
+
+  String get directInviteCode {
+    final publicKey = state.me.publicKey;
+    if (publicKey == null || publicKey.isEmpty) return 'Generation en cours';
+    return 'LDM-${state.me.id}-$publicKey';
+  }
+
+  @override
+  void dispose() {
+    _transportSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> scanAndRequestPermissions() async {
+    transportStatus = MeshTransportStatus.scanning;
+    transportLine = 'Recherche Meshtastic BLE...';
+    notifyListeners();
+    await _transport.requestPermissions();
+    devices = await _transport.scan();
+    transportStatus = devices.isEmpty
+        ? MeshTransportStatus.disconnected
+        : MeshTransportStatus.idle;
+    transportLine = devices.isEmpty
+        ? 'Aucun module Meshtastic trouve'
+        : '${devices.length} module(s) trouve(s)';
+    notifyListeners();
+  }
+
+  Future<void> connect(MeshDevice device) async {
+    transportStatus = MeshTransportStatus.connecting;
+    transportLine = 'Connexion a ${device.name}...';
+    connectedDevice = device;
+    notifyListeners();
+    await _transport.connect(device);
+  }
+
+  Future<void> disconnect() async {
+    await _transport.disconnect();
+    connectedDevice = null;
+    transportStatus = MeshTransportStatus.disconnected;
+    transportLine = 'Module non connecte';
+    notifyListeners();
+  }
+
+  void selectGuild(String guildId) {
+    final guild = state.guilds[guildId];
+    if (guild == null || guild.channelIds.isEmpty) return;
+    state = state.copyWith(
+      selectedGuildId: guildId,
+      selectedChannelId: guild.channelIds.first,
+      selectedKind: ConversationKind.channel,
+    );
+    _save();
+    notifyListeners();
+  }
+
+  void selectChannel(String channelId) {
+    if (!state.channels.containsKey(channelId)) return;
+    state = state.copyWith(
+      selectedChannelId: channelId,
+      selectedKind: ConversationKind.channel,
+    );
+    _save();
+    notifyListeners();
+  }
+
+  void selectDirect(String userId) {
+    if (userId == state.me.id || !state.users.containsKey(userId)) return;
+    state = state.copyWith(
+      selectedKind: ConversationKind.direct,
+      selectedDirectUserId: userId,
+    );
+    _save();
+    notifyListeners();
+  }
+
+  Future<void> addDirectContact(
+    String userId,
+    String name, {
+    String? sharedKey,
+  }) async {
+    final directInvite = _parseDirectInvite(userId);
+    final cleanId = directInvite?.userId ?? userId.trim();
+    if (!cleanId.startsWith('u') ||
+        cleanId.length != 9 ||
+        cleanId == state.me.id ||
+        int.tryParse(cleanId.substring(1), radix: 16) == null) {
+      transportLine = 'ID utilisateur invalide: attendu u + 8 caracteres hex';
+      notifyListeners();
+      return;
+    }
+    final users = Map<String, LoraUser>.from(state.users)
+      ..[cleanId] = LoraUser(
+        id: cleanId,
+        name: name.trim().isEmpty
+            ? 'Node ${cleanId.substring(1, 5)}'
+            : name.trim(),
+        publicKey: directInvite?.publicKey,
+      );
+    final key = directInvite == null
+        ? (sharedKey == null || sharedKey.trim().isEmpty
+              ? newCryptoKey()
+              : sharedKey.trim())
+        : await _crypto.deriveDirectKey(
+            selfId: state.me.id,
+            peerId: cleanId,
+            privateKey: state.identityPrivateKey,
+            selfPublicKey: state.me.publicKey!,
+            peerPublicKey: directInvite.publicKey,
+          );
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(key)) {
+      transportLine = 'Cle DM invalide: attendu 64 caracteres hex';
+      notifyListeners();
+      return;
+    }
+    final directKeys = Map<String, String>.from(state.directKeys)
+      ..[cleanId] = key.toLowerCase();
+    state = state.copyWith(
+      users: users,
+      directKeys: directKeys,
+      selectedKind: ConversationKind.direct,
+      selectedDirectUserId: cleanId,
+    );
+    await _save();
+    if (directInvite != null) {
+      transportLine = 'Cle DM derivee automatiquement avec X25519';
+    } else if (sharedKey == null || sharedKey.trim().isEmpty) {
+      transportLine = 'Cle DM generee: $key';
+    }
+    notifyListeners();
+  }
+
+  Future<void> createGuild(String name) async {
+    final guildId = newMeshId('g');
+    final general = newMeshId('c');
+    final ops = newMeshId('c');
+    final cryptoKey = newCryptoKey();
+    final guild = LoraGuild(
+      id: guildId,
+      name: name.trim().isEmpty ? 'Nouveau serveur' : name.trim(),
+      inviteKey: 'LC2-$guildId-$cryptoKey',
+      channelIds: [general, ops],
+      cryptoKey: cryptoKey,
+    );
+    final guilds = Map<String, LoraGuild>.from(state.guilds)
+      ..[guild.id] = guild;
+    final channels = Map<String, LoraChannel>.from(state.channels)
+      ..[general] = LoraChannel(id: general, guildId: guild.id, name: 'general')
+      ..[ops] = LoraChannel(id: ops, guildId: guild.id, name: 'ops');
+    state = state.copyWith(
+      guilds: guilds,
+      channels: channels,
+      selectedGuildId: guild.id,
+      selectedChannelId: general,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> createChannel(String name) async {
+    final guild = state.selectedGuild;
+    final cleanName = _normalizeChannelName(name);
+    if (cleanName.isEmpty) {
+      transportLine = 'Nom de salon invalide';
+      notifyListeners();
+      return;
+    }
+    final channelId = newMeshId('c');
+    final channel = LoraChannel(
+      id: channelId,
+      guildId: guild.id,
+      name: cleanName,
+    );
+    final guilds = Map<String, LoraGuild>.from(state.guilds)
+      ..[guild.id] = guild.copyWith(
+        channelIds: [...guild.channelIds, channelId],
+      );
+    final channels = Map<String, LoraChannel>.from(state.channels)
+      ..[channelId] = channel;
+    state = state.copyWith(
+      guilds: guilds,
+      channels: channels,
+      selectedKind: ConversationKind.channel,
+      selectedChannelId: channelId,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> joinInvite(String inviteCode) async {
+    final parts = inviteCode.trim().split('-');
+    if (parts.length < 3 || (parts.first != 'LC' && parts.first != 'LC2')) {
+      return;
+    }
+    final guildId = parts[1];
+    if (state.guilds.containsKey(guildId)) {
+      selectGuild(guildId);
+      return;
+    }
+    final cryptoKey = parts.first == 'LC2' && parts.length >= 3
+        ? parts[2]
+        : newCryptoKey();
+    final channelId = newMeshId('c');
+    final guild = LoraGuild(
+      id: guildId,
+      name: 'Serveur $guildId',
+      inviteKey: inviteCode.trim(),
+      channelIds: [channelId],
+      cryptoKey: cryptoKey,
+    );
+    final guilds = Map<String, LoraGuild>.from(state.guilds)
+      ..[guild.id] = guild;
+    final channels = Map<String, LoraChannel>.from(state.channels)
+      ..[channelId] = LoraChannel(
+        id: channelId,
+        guildId: guild.id,
+        name: 'general',
+      );
+    state = state.copyWith(
+      guilds: guilds,
+      channels: channels,
+      selectedGuildId: guild.id,
+      selectedChannelId: channelId,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> sendText(String text) async {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    if (transportStatus != MeshTransportStatus.connected) {
+      transportLine = 'Connecte un module Meshtastic avant envoi';
+      notifyListeners();
+      return;
+    }
+
+    final message = LoraMessage(
+      id: newMeshId('m'),
+      guildId: state.isDirectSelected ? 'g00000000' : state.selectedGuildId,
+      channelId: state.isDirectSelected
+          ? state.selectedDirectUserId!
+          : state.selectedChannelId,
+      senderId: state.me.id,
+      body: clean,
+      createdAt: DateTime.now(),
+      status: MessageStatus.pending,
+      fragmentCount: 1,
+      isDirect: state.isDirectSelected,
+      recipientId: state.isDirectSelected ? state.selectedDirectUserId : null,
+    );
+    state = state.copyWith(messages: [...state.messages, message]);
+    await _save();
+    notifyListeners();
+
+    try {
+      final frames = await _sendMessageFrames(message);
+      _replaceMessage(
+        message.id,
+        message.copyWith(
+          status: MessageStatus.sent,
+          fragmentCount: frames.length,
+        ),
+      );
+      transportLine = '${frames.length} fragment(s) envoye(s) au module';
+    } catch (error) {
+      _replaceMessage(
+        message.id,
+        message.copyWith(status: MessageStatus.failed),
+      );
+      transportLine = 'Echec envoi: $error';
+    }
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> requestHistorySync() async {
+    if (transportStatus != MeshTransportStatus.connected) {
+      transportLine = 'Connecte un module Meshtastic avant la sync';
+      notifyListeners();
+      return;
+    }
+    final direct = state.isDirectSelected;
+    final channelId = direct
+        ? state.selectedDirectUserId!
+        : state.selectedChannelId;
+    final guildId = direct ? 'g00000000' : state.selectedGuildId;
+    final existing = state.messagesForCurrentConversation().toList();
+    final since = existing.isEmpty
+        ? DateTime.now().subtract(const Duration(days: 7))
+        : existing.last.createdAt.subtract(const Duration(minutes: 1));
+    final frames = _protocol.syncRequest(
+      messageId: newMeshId('m'),
+      guildId: guildId,
+      channelId: channelId,
+      senderId: state.me.id,
+      since: since,
+      direct: direct,
+    );
+    for (final frame in frames) {
+      await _transport.write(_meshtasticCodec.encodePrivateAppPacket(frame));
+    }
+    transportLine = 'Demande de rattrapage historique envoyee';
+    notifyListeners();
+  }
+
+  void _handleTransportEvent(MeshTransportEvent event) {
+    if (event.data != null) {
+      _handleIncomingBytes(event.data!);
+      return;
+    }
+    transportStatus = event.status;
+    if (event.status == MeshTransportStatus.connected) {
+      transportLine = event.message ?? 'Module Meshtastic connecte';
+    } else if (event.status == MeshTransportStatus.disconnected) {
+      connectedDevice = null;
+      transportLine = event.message ?? 'Module deconnecte';
+    } else if (event.status == MeshTransportStatus.error) {
+      transportLine = event.message ?? 'Erreur transport';
+    }
+    notifyListeners();
+  }
+
+  void _handleIncomingBytes(Uint8List bytes) {
+    final privatePayload = _meshtasticCodec.tryDecodePrivateAppPayload(bytes);
+    if (privatePayload == null) return;
+    final frame = LoracordFrame.tryDecode(privatePayload);
+    if (frame == null) return;
+    final packet = _reassembler.accept(frame);
+    if (packet == null) return;
+    unawaited(_handleIncomingPacket(packet));
+  }
+
+  Future<void> _handleIncomingPacket(ReassembledLoracordMessage packet) async {
+    if (packet.type == LoracordFrameType.syncRequest) {
+      await _handleSyncRequest(packet);
+      return;
+    }
+    if (state.messages.any((message) => message.id == packet.messageId)) return;
+    if (packet.type == LoracordFrameType.directText &&
+        packet.channelId != state.me.id &&
+        packet.senderId != state.me.id) {
+      return;
+    }
+    final body = await _decodePacketBody(packet);
+    if (body == null) return;
+
+    final users = Map<String, LoraUser>.from(state.users);
+    users.putIfAbsent(
+      packet.senderId,
+      () => LoraUser(
+        id: packet.senderId,
+        name: 'Node ${packet.senderId.substring(1, 5)}',
+      ),
+    );
+    final message = LoraMessage(
+      id: packet.messageId,
+      guildId: packet.guildId,
+      channelId: packet.channelId,
+      senderId: packet.senderId,
+      body: body,
+      createdAt: packet.createdAt,
+      status: MessageStatus.received,
+      fragmentCount: packet.fragmentCount,
+      isDirect: packet.type == LoracordFrameType.directText,
+      recipientId: packet.type == LoracordFrameType.directText
+          ? packet.channelId
+          : null,
+    );
+    state = state.copyWith(
+      users: users,
+      messages: [...state.messages, message],
+    );
+    _save();
+    _notifier.notifyMessage(title: users[packet.senderId]!.name, body: body);
+    notifyListeners();
+  }
+
+  Future<List<Uint8List>> _sendMessageFrames(LoraMessage message) async {
+    final key = _keyForOutgoingMessage(message);
+    final encryptedPayload = key == null
+        ? null
+        : await _crypto.encryptText(
+            key: key,
+            messageId: message.id,
+            guildId: message.guildId,
+            channelId: message.channelId,
+            senderId: message.senderId,
+            text: message.body,
+          );
+    final frames = encryptedPayload == null
+        ? _protocol.fragmentText(
+            type: message.isDirect
+                ? LoracordFrameType.directText
+                : LoracordFrameType.channelText,
+            messageId: message.id,
+            guildId: message.guildId,
+            channelId: message.channelId,
+            senderId: message.senderId,
+            createdAt: message.createdAt,
+            text: message.body,
+          )
+        : _protocol.fragmentBytes(
+            type: message.isDirect
+                ? LoracordFrameType.directText
+                : LoracordFrameType.channelText,
+            messageId: message.id,
+            guildId: message.guildId,
+            channelId: message.channelId,
+            senderId: message.senderId,
+            createdAt: message.createdAt,
+            payload: encryptedPayload,
+            encrypted: true,
+          );
+    for (final frame in frames) {
+      await _transport.write(_meshtasticCodec.encodePrivateAppPacket(frame));
+    }
+    return frames;
+  }
+
+  Future<String?> _decodePacketBody(ReassembledLoracordMessage packet) async {
+    if (!packet.encrypted) return packet.text;
+    final key = _keyForIncomingPacket(packet);
+    if (key == null) {
+      transportLine = 'Message chiffre ignore: cle serveur manquante';
+      notifyListeners();
+      return null;
+    }
+    try {
+      return await _crypto.decryptText(
+        key: key,
+        messageId: packet.messageId,
+        guildId: packet.guildId,
+        channelId: packet.channelId,
+        senderId: packet.senderId,
+        payload: packet.payload,
+      );
+    } catch (_) {
+      transportLine = 'Message chiffre ignore: cle invalide';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  String? _keyForOutgoingMessage(LoraMessage message) {
+    if (message.isDirect) {
+      final recipient = message.recipientId;
+      return recipient == null ? null : state.directKeys[recipient];
+    }
+    return state.guilds[message.guildId]?.cryptoKey;
+  }
+
+  String? _keyForIncomingPacket(ReassembledLoracordMessage packet) {
+    if (packet.type == LoracordFrameType.directText) {
+      final peerId = packet.senderId == state.me.id
+          ? packet.channelId
+          : packet.senderId;
+      return state.directKeys[peerId];
+    }
+    return state.guilds[packet.guildId]?.cryptoKey;
+  }
+
+  Future<void> _handleSyncRequest(ReassembledLoracordMessage packet) async {
+    if (packet.senderId == state.me.id) return;
+    final request = LoracordSyncRequest.tryParse(packet.text);
+    if (request == null) return;
+    final candidates = state.messages
+        .where((message) {
+          if (!message.createdAt.isAfter(request.since)) return false;
+          if (request.direct) {
+            return message.isDirect &&
+                ((message.senderId == packet.senderId &&
+                        message.recipientId == packet.channelId) ||
+                    (message.senderId == packet.channelId &&
+                        message.recipientId == packet.senderId));
+          }
+          return !message.isDirect &&
+              message.guildId == packet.guildId &&
+              message.channelId == packet.channelId;
+        })
+        .take(6)
+        .toList();
+
+    for (final message in candidates) {
+      await _sendMessageFrames(message);
+    }
+    transportLine = 'Sync: ${candidates.length} message(s) proposes au mesh';
+    notifyListeners();
+  }
+
+  void _replaceMessage(String id, LoraMessage replacement) {
+    state = state.copyWith(
+      messages: state.messages
+          .map((message) => message.id == id ? replacement : message)
+          .toList(),
+    );
+  }
+
+  Future<void> _save() => _storage.write(_stateKey, state.encode());
+
+  Future<void> _ensureDirectIdentity() async {
+    var privateKey = state.identityPrivateKey;
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(privateKey)) {
+      privateKey = newCryptoKey();
+    }
+    final publicKey = await _crypto.publicKeyFromPrivate(privateKey);
+    if (state.identityPrivateKey == privateKey &&
+        state.me.publicKey == publicKey) {
+      return;
+    }
+    final me = state.me.copyWith(publicKey: publicKey);
+    final users = Map<String, LoraUser>.from(state.users)..[me.id] = me;
+    state = state.copyWith(
+      me: me,
+      users: users,
+      identityPrivateKey: privateKey,
+    );
+    await _save();
+  }
+
+  ({String userId, String publicKey})? _parseDirectInvite(String value) {
+    final parts = value.trim().split('-');
+    if (parts.length != 3 || parts.first != 'LDM') return null;
+    final userId = parts[1];
+    final publicKey = parts[2];
+    final validUser =
+        userId.startsWith('u') &&
+        userId.length == 9 &&
+        int.tryParse(userId.substring(1), radix: 16) != null;
+    final validKey = RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(publicKey);
+    if (!validUser || !validKey) return null;
+    return (userId: userId, publicKey: publicKey.toLowerCase());
+  }
+
+  String _normalizeChannelName(String value) {
+    final clean = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    return clean.length > 24 ? clean.substring(0, 24) : clean;
+  }
+}

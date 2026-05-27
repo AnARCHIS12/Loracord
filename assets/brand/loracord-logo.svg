@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Loracord logo">
+  <rect x="24" y="24" width="464" height="464" rx="120" fill="#15a06d"/>
+  <path d="M136 170c0-48 33-76 86-76h144c53 0 86 28 86 78v96c0 50-33 78-86 78h-78l-78 70 18-70h-6c-53 0-86-28-86-78z" fill="#101217"/>
+  <path d="M244 264V164M244 264h76" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M152 185c-24 34-24 79 0 112M107 153c-45 64-45 146 0 210" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round"/>
+</svg>

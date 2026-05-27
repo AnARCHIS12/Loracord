@@ -1,0 +1,118 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v1.0.0
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub Release as prerelease
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            PRERELEASE="${{ inputs.prerelease }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            PRERELEASE="false"
+          fi
+          VERSION="${TAG#v}"
+          OWNER_REPO="${GITHUB_REPOSITORY}"
+          PAGE_URL="https://${OWNER_REPO%%/*}.github.io/${OWNER_REPO#*/}/"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "page_url=${PAGE_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release \
+            --build-name "${{ steps.meta.outputs.version }}" \
+            --build-number "${{ github.run_number }}"
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/Loracord-${{ steps.meta.outputs.tag }}.apk"
+          sha256sum "dist/Loracord-${{ steps.meta.outputs.tag }}.apk" > "dist/Loracord-${{ steps.meta.outputs.tag }}.apk.sha256"
+          cat > release-notes.md <<'NOTES'
+          ## Loracord Android
+
+          APK Android genere automatiquement par GitHub Actions.
+
+          - Interface Discord-like offline
+          - Transport BLE Meshtastic
+          - Serveurs, salons texte, DM et sync store-forward
+
+          Site GitHub Pages: ${{ steps.meta.outputs.page_url }}
+          NOTES
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        shell: bash
+        run: |
+          FLAGS=()
+          if [ "$PRERELEASE" = "true" ]; then
+            FLAGS+=(--prerelease)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Loracord $TAG" \
+              --notes-file release-notes.md \
+              "${FLAGS[@]}"
+          else
+            gh release create "$TAG" \
+              --title "Loracord $TAG" \
+              --notes-file release-notes.md \
+              "${FLAGS[@]}"
+          fi
+
+          gh release upload "$TAG" dist/* --clobber

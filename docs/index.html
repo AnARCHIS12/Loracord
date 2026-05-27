@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-repo="AnARCHIS12/Loracord">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#15a06d">
+    <meta
+      name="description"
+      content="Loracord is a Discord-like mobile app that works offline over Meshtastic LoRa mesh networks."
+    >
+    <title>Loracord - Discord offline via Meshtastic</title>
+    <link rel="icon" href="assets/loracord-logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="hero">
+      <nav class="nav" aria-label="Main navigation">
+        <a class="brand" href="#">
+          <img src="assets/loracord-logo.svg" alt="" width="38" height="38">
+          <span>Loracord</span>
+        </a>
+        <div class="nav-actions">
+          <a href="#features">Features</a>
+          <a href="#protocol">Protocol</a>
+          <a href="#download">APK</a>
+          <a data-repo-link href="https://github.com/">GitHub</a>
+        </div>
+      </nav>
+
+      <section class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Android + ESP32 + LoRa mesh</p>
+          <h1>Loracord</h1>
+          <p class="lead">
+            A Discord-like interface for communicating without Internet through
+            Meshtastic nodes. Guilds, text channels, DMs, store-and-forward
+            history, and AES-GCM payloads over a decentralized mesh network.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" id="hero-download" href="#download">Download APK</a>
+            <a class="button ghost" data-repo-link href="https://github.com/">View code</a>
+          </div>
+          <div class="status-line" id="release-status">Checking the latest release...</div>
+        </div>
+
+        <div class="phone" aria-label="Loracord app preview">
+          <div class="phone-top"></div>
+          <div class="app-preview">
+            <aside class="guilds">
+              <img src="assets/loracord-logo.svg" alt="">
+              <span>C</span>
+              <span>R</span>
+              <span>+</span>
+            </aside>
+            <aside class="channels">
+              <strong>Camp Mesh</strong>
+              <small>LC2-g7a01cafe-...</small>
+              <p>TEXT CHANNELS</p>
+              <b># general</b>
+              <b># emergency</b>
+              <b># ops</b>
+              <p>DIRECT MESSAGES</p>
+              <b>@ Nomade</b>
+            </aside>
+            <main class="messages">
+              <div class="top"># general <span>LoRa ready</span></div>
+              <article>
+                <i>NO</i>
+                <div><strong>Nomade</strong><p>Northern relay is active.</p></div>
+              </article>
+              <article>
+                <i>ME</i>
+                <div><strong>Mesh</strong><p>3 fragments received, sync OK.</p></div>
+              </article>
+              <div class="composer">Short message over LoRa</div>
+            </main>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <main>
+      <section class="section" id="features">
+        <div class="section-heading">
+          <p class="eyebrow">Features</p>
+          <h2>Low-bandwidth social mesh, zero central server</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span>01</span>
+            <h3>Guilds and channels</h3>
+            <p>Create communities, add custom text channels, invite by code, and keep local history.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Direct messages</h3>
+            <p>Private conversations by lightweight user ID, carried through the Meshtastic private app port.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Store and forward</h3>
+            <p>History catch-up through compact sync requests between nodes that already hold messages.</p>
+          </article>
+          <article>
+            <span>04</span>
+            <h3>Encryption</h3>
+            <p>Meshtastic PSK for the LoRa channel, Loracord AES-GCM 256, and X25519 DM invites.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split" id="protocol">
+        <div>
+          <p class="eyebrow">Architecture</p>
+          <h2>The phone drives, the mesh transports</h2>
+          <p>
+            Loracord encodes compact binary frames, fragments short messages,
+            then sends them to a Meshtastic node over BLE. The ESP32/radio node
+            handles mesh transmission across LoRa.
+          </p>
+        </div>
+        <ul class="checks">
+          <li>Transport Android BLE Meshtastic ToRadio / FromRadio</li>
+          <li>Port Meshtastic PRIVATE_APP</li>
+          <li>Loracord payloads encrypted before ToRadio</li>
+          <li>DM invites with X25519 key derivation</li>
+          <li>Loracord fragmentation and reassembly</li>
+          <li>Notifications locales Android</li>
+          <li>Fully offline operation</li>
+        </ul>
+      </section>
+
+      <section class="section download" id="download">
+        <div>
+          <p class="eyebrow">Release</p>
+          <h2>Download the Android APK</h2>
+          <p id="release-copy">
+            This page automatically shows the APK from the latest GitHub Release
+            as soon as a release is published.
+          </p>
+        </div>
+        <div class="download-card">
+          <img src="assets/loracord-logo.svg" alt="" width="74" height="74">
+          <h3 id="release-title">Latest release</h3>
+          <p id="release-meta">Waiting for publication.</p>
+          <a class="button primary disabled" id="apk-link" href="#" aria-disabled="true">APK unavailable</a>
+          <a class="text-link" id="release-link" href="#" hidden>Release notes</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Loracord</span>
+      <span>Offline mesh social for Meshtastic</span>
+    </footer>
+    <script src="app.js"></script>
+  </body>
+</html>
