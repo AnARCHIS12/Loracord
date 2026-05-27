@@ -950,7 +950,7 @@ Future<void> _showAddDirectContact(
             controller: idInput,
             autofocus: true,
             decoration: const InputDecoration(
-              labelText: 'LDM-... invite or u... ID',
+              labelText: 'LDM invite, u1234abcd, !1234abcd, or 8 hex',
             ),
           ),
           const SizedBox(height: 10),

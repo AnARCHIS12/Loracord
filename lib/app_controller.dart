@@ -174,12 +174,10 @@ class LoracordController extends ChangeNotifier {
     String? sharedKey,
   }) async {
     final directInvite = _parseDirectInvite(userId);
-    final cleanId = directInvite?.userId ?? userId.trim();
-    if (!cleanId.startsWith('u') ||
-        cleanId.length != 9 ||
-        cleanId == state.me.id ||
-        int.tryParse(cleanId.substring(1), radix: 16) == null) {
-      transportLine = 'Invalid user ID: expected u + 8 hex characters';
+    final cleanId = directInvite?.userId ?? _normalizeDirectUserId(userId);
+    if (cleanId == null || cleanId == state.me.id) {
+      transportLine =
+          'Invalid user ID: use LDM-..., u1234abcd, !1234abcd, or 1234abcd';
       notifyListeners();
       return;
     }
@@ -729,6 +727,16 @@ class LoracordController extends ChangeNotifier {
     final validKey = RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(publicKey);
     if (!validUser || !validKey) return null;
     return (userId: userId, publicKey: publicKey.toLowerCase());
+  }
+
+  String? _normalizeDirectUserId(String value) {
+    final clean = value.trim().toLowerCase();
+    if (RegExp(r'^u[0-9a-f]{8}$').hasMatch(clean)) return clean;
+    if (RegExp(r'^[0-9a-f]{8}$').hasMatch(clean)) return 'u$clean';
+    if (RegExp(r'^![0-9a-f]{8}$').hasMatch(clean)) {
+      return 'u${clean.substring(1)}';
+    }
+    return null;
   }
 
   String _normalizeChannelName(String value) {
